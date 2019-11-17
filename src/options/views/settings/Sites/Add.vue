@@ -1,18 +1,37 @@
 <template>
   <div>
-    <v-snackbar v-model="valid" top :timeout="3000" color="error">{{ words.validMsg }}</v-snackbar>
+    <v-snackbar
+      :value="haveError"
+      top
+      :timeout="3000"
+      color="error"
+    >{{ $t('settings.sites.add.validMsg') }}</v-snackbar>
     <v-dialog v-model="show" max-width="800">
       <v-card>
-        <v-card-title class="headline blue-grey darken-2" style="color:white">{{ words.title }}</v-card-title>
+        <v-toolbar dark color="blue-grey darken-2">
+          <v-toolbar-title>{{ $t('settings.sites.add.title') }}</v-toolbar-title>
+          <v-spacer></v-spacer>
+          <v-btn
+            icon
+            flat
+            color="success"
+            href="https://github.com/ronggang/PT-Plugin-Plus/wiki/config-site"
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            :title="$t('common.help')"
+          >
+            <v-icon>help</v-icon>
+          </v-btn>
+        </v-toolbar>
 
         <v-card-text>
           <v-stepper v-model="step">
             <v-stepper-header>
-              <v-stepper-step :complete="step > 1" step="1">{{ words.step1 }}</v-stepper-step>
+              <v-stepper-step :complete="step > 1" step="1">{{ $t('settings.sites.add.step1') }}</v-stepper-step>
 
               <v-divider></v-divider>
 
-              <v-stepper-step step="2">{{ words.step2 }}</v-stepper-step>
+              <v-stepper-step step="2">{{ $t('settings.sites.add.step2') }}</v-stepper-step>
             </v-stepper-header>
 
             <v-stepper-items>
@@ -21,7 +40,7 @@
                 <v-autocomplete
                   v-model="selectedSite"
                   :items="$store.getters.sites"
-                  :label="words.validMsg"
+                  :label="$t('settings.sites.add.validMsg')"
                   :hint="selectedSiteDescription"
                   :filter="filterSite"
                   persistent-hint
@@ -32,13 +51,13 @@
                 >
                   <template slot="selection" slot-scope="{ item }">
                     <v-list-tile-avatar>
-                      <img :src="item.icon">
+                      <img :src="item.icon" />
                     </v-list-tile-avatar>
                     <span v-text="item.name"></span>
                   </template>
                   <template slot="item" slot-scope="data" style>
                     <v-list-tile-avatar>
-                      <img :src="data.item.icon">
+                      <img :src="data.item.icon" />
                     </v-list-tile-avatar>
                     <v-list-tile-content>
                       <v-list-tile-title v-html="data.item.name"></v-list-tile-title>
@@ -53,7 +72,7 @@
 
               <!-- 站点配置 -->
               <v-stepper-content step="2">
-                <SiteEditor :site="selectedSite" :custom="isCustom"/>
+                <SiteEditor :initData="selectedSite" :custom="isCustom" @change="change" />
               </v-stepper-content>
             </v-stepper-items>
           </v-stepper>
@@ -71,32 +90,26 @@
             rel="noopener noreferrer nofollow"
           >
             <v-icon>help</v-icon>
-            <span class="ml-1">{{ words.help }}</span>
+            <span class="ml-1">{{ $t('settings.sites.add.help') }}</span>
           </v-btn>
           <v-btn flat @click="custom" v-show="step<stepCount">
             <v-icon>add_circle_outline</v-icon>
-            <span class="ml-1">{{ words.custom }}</span>
+            <span class="ml-1">{{ $t('settings.sites.add.custom') }}</span>
           </v-btn>
           <v-spacer></v-spacer>
           <v-btn flat color="error" @click="cancel">
             <v-icon>cancel</v-icon>
-            <span class="ml-1">{{ words.cancel }}</span>
+            <span class="ml-1">{{ $t('common.cancel') }}</span>
           </v-btn>
           <v-btn flat color="grey darken-1" @click="step--" :disabled="step===1">
             <v-icon>navigate_before</v-icon>
-            <span>{{ words.prev }}</span>
+            <span>{{ $t('settings.sites.add.prev') }}</span>
           </v-btn>
           <v-btn flat color="blue" @click="next(step)" v-show="step<stepCount">
-            <span>{{ words.next }}</span>
+            <span>{{ $t('settings.sites.add.next') }}</span>
             <v-icon>navigate_next</v-icon>
           </v-btn>
-          <v-btn
-            flat
-            color="success"
-            @click="save"
-            v-show="step===stepCount"
-            :disabled="!selectedSite.valid"
-          >
+          <v-btn flat color="success" @click="save" v-show="step===stepCount" :disabled="!valid">
             <v-icon>check_circle_outline</v-icon>
           </v-btn>
         </v-card-actions>
@@ -114,23 +127,14 @@ export default Vue.extend({
   },
   data() {
     return {
-      words: {
-        title: "新增站点",
-        next: "下一步",
-        prev: "上一步",
-        help: "找不到想要的站点？来这里添加吧！",
-        validMsg: "请选择一个站点（支持搜索）",
-        custom: "自定义",
-        step1: "选择站点",
-        step2: "确认站点配置",
-        cancel: "取消"
-      },
       step: 1,
       show: false,
       stepCount: 2,
       selectedSite: {} as Site,
       valid: false,
-      isCustom: false
+      isCustom: false,
+      newData: {} as Site,
+      haveError: false
     };
   },
   props: {
@@ -153,19 +157,39 @@ export default Vue.extend({
     }
   },
   methods: {
+    change(options: any) {
+      console.log(options);
+      this.newData = options.data;
+      this.valid = options.valid;
+    },
     save() {
-      this.$emit("save", Object.assign({}, this.selectedSite));
+      this.$emit(
+        "save",
+        Object.assign(
+          {
+            isCustom: this.isCustom
+          },
+          this.newData
+        )
+      );
       this.show = false;
     },
     next(step: number) {
       if (this.selectedSite && this.selectedSite.name) {
-        this.valid = false;
+        this.valid = true;
+        this.haveError = false;
         this.step++;
       } else {
-        this.valid = true;
+        this.haveError = true;
+        this.valid = false;
       }
+      this.isCustom = false;
     },
     custom() {
+      this.selectedSite = {
+        name: "",
+        isCustom: true
+      };
       this.isCustom = true;
       this.valid = false;
       this.step = 2;
@@ -199,6 +223,9 @@ export default Vue.extend({
   },
   computed: {
     selectedSiteDescription(): string {
+      if (!this.selectedSite) {
+        return "";
+      }
       let site = this.selectedSite;
       let description = "";
       if (site.description !== undefined) {

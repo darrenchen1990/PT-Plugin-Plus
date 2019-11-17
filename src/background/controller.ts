@@ -13,7 +13,10 @@ import {
   EModule,
   ERequestMethod,
   UserInfo,
-  EUserDataRange
+  EUserDataRange,
+  i18nResource,
+  IBackupServer,
+  EWikiLink
 } from "@/interface/common";
 import { filters as Filters } from "@/service/filters";
 import { ClientController } from "@/service/clientController";
@@ -25,6 +28,7 @@ import { APP } from "@/service/api";
 import URLParse from "url-parse";
 import { User } from "./user";
 import { MovieInfoService } from "@/service/movieInfoService";
+import parseTorrent from "parse-torrent";
 
 type Service = PTPlugin;
 export default class Controller {
@@ -49,6 +53,10 @@ export default class Controller {
   public contentPages: any[] = [];
 
   private imageBase64Cache: Dictionary<any> = {};
+  // 下载重试次数
+  private downloadFailedRetriesCache: Dictionary<any> = {};
+  // 种子链接对应的名称缓存
+  private torrentInfosCache: Dictionary<any> = {};
 
   constructor(public service: Service) {}
 
@@ -70,6 +78,20 @@ export default class Controller {
     if (options.connectClientTimeout) {
       this.movieInfoService.timeout = options.connectClientTimeout;
     }
+
+    // 追加用户定义的apiKey
+    if (this.options.apiKey) {
+      if (this.options.apiKey.omdb && this.options.apiKey.omdb.length > 0) {
+        this.movieInfoService.appendApiKey("omdb", this.options.apiKey.omdb);
+      }
+
+      if (this.options.apiKey.douban && this.options.apiKey.douban.length > 0) {
+        this.movieInfoService.appendApiKey(
+          "douban",
+          this.options.apiKey.douban
+        );
+      }
+    }
   }
 
   /**
@@ -77,7 +99,11 @@ export default class Controller {
    * @param options
    */
   public getSearchResult(options: any): Promise<any> {
-    return this.searcher.searchTorrent(options.site, options.key);
+    return this.searcher.searchTorrent(
+      options.site,
+      options.key,
+      options.payload
+    );
   }
 
   /**
@@ -136,7 +162,7 @@ export default class Controller {
     return new Promise<any>((resolve?: any, reject?: any) => {
       if (!data.url) {
         reject({
-          msg: "无效的地址"
+          msg: this.service.i18n.t("service.controller.invalidAddress") //"无效的地址"
         });
         return;
       }
@@ -147,7 +173,7 @@ export default class Controller {
       });
       if (!clientConfig) {
         reject({
-          msg: "无效的下载服务器"
+          msg: this.service.i18n.t("service.controller.invalidDownloadServer") //"无效的下载服务器"
         });
         return;
       }
@@ -176,7 +202,7 @@ export default class Controller {
       let host = URL.host;
       let site = this.getSiteFromHost(host);
       // 重新指定host内容，因为站点可能定义了多域名
-      host = site.host;
+      host = site.host + "";
       let siteDefaultPath = this.getSiteDefaultPath(site);
       let siteClientConfig = this.siteDefaultClients[host];
       if (siteDefaultPath) {
@@ -222,26 +248,52 @@ export default class Controller {
         .call(EAction.addTorrentFromURL, {
           url: downloadOptions.url,
           savePath: downloadOptions.savePath,
-          autoStart: downloadOptions.autoStart
+          autoStart:
+            downloadOptions.autoStart === undefined
+              ? false
+              : downloadOptions.autoStart
         })
         .then((result: any) => {
           this.service.logger.add({
             module: EModule.background,
             event: "service.controller.doDownload.finished",
-            msg: `下载服务器${clientConfig.options.name}处理[${
-              EAction.addTorrentFromURL
-            }]命令完成`,
+            msg: this.service.i18n.t("service.controller.downloadFinished", {
+              name: clientConfig.options.name,
+              action: EAction.addTorrentFromURL
+            }), // `下载服务器${clientConfig.options.name}处理[${ EAction.addTorrentFromURL}]命令完成`,
             data: result
           });
 
-          if (result && result.code === 0) {
+          // 如果未指定标题，则尝试从种子信息缓存中获取名称
+          if (
+            !downloadOptions.title &&
+            this.torrentInfosCache[downloadOptions.url]
+          ) {
+            downloadOptions.title = this.torrentInfosCache[downloadOptions.url];
+          }
+
+          if (result && (result.code === 0 || result.success === false)) {
+            if (
+              this.downloadFailedRetry(
+                clientConfig,
+                downloadOptions,
+                host,
+                result,
+                resolve,
+                reject
+              )
+            ) {
+              return;
+            }
+
             switch (result.msg) {
               // 连接超时
               case "timeout":
                 reject({
                   success: false,
-                  msg:
-                    "连接下载服务器超时，请检查网络设置或调整服务器超时时间！",
+                  msg: this.service.i18n.t(
+                    "service.controller.downloadTimeout"
+                  ), //"连接下载服务器超时，请检查网络设置或调整服务器超时时间！",
                   status: "error"
                 });
                 break;
@@ -278,14 +330,32 @@ export default class Controller {
             .catch((result: any) => {
               reject(result);
             });
+
+          if (this.downloadFailedRetriesCache[downloadOptions.url]) {
+            delete this.downloadFailedRetriesCache[downloadOptions.url];
+          }
         })
         .catch((result: any) => {
+          if (
+            this.downloadFailedRetry(
+              clientConfig,
+              downloadOptions,
+              host,
+              result,
+              resolve,
+              reject
+            )
+          ) {
+            return;
+          }
+
           this.service.logger.add({
             module: EModule.background,
             event: "service.controller.doDownload.error",
-            msg: `下载服务器${clientConfig.options.name}处理[${
-              EAction.addTorrentFromURL
-            }]命令失败`,
+            msg: this.service.i18n.t("service.controller.downloadError", {
+              name: clientConfig.options.name,
+              action: EAction.addTorrentFromURL
+            }), // `下载服务器${clientConfig.options.name}处理[${EAction.addTorrentFromURL}]命令失败`,
             data: result
           });
           this.saveDownloadHistory(
@@ -297,6 +367,84 @@ export default class Controller {
           reject(result);
         });
     });
+  }
+
+  /**
+   * 下载失败重试
+   * @param clientConfig
+   * @param downloadOptions
+   * @param host
+   * @param failedMsg
+   * @param resolve
+   * @param reject
+   */
+  private downloadFailedRetry(
+    clientConfig: any,
+    downloadOptions: DownloadOptions,
+    host: string = "",
+    failedMsg: any,
+    resolve?: any,
+    reject?: any
+  ): boolean {
+    // 是否失败重试
+    if (this.options.downloadFailedRetry) {
+      let maxRetries = this.options.downloadFailedFailedRetryCount;
+      if (maxRetries === undefined) {
+        maxRetries = 0;
+      }
+      let retries = this.downloadFailedRetriesCache[downloadOptions.url];
+
+      if (retries === undefined) {
+        retries = 0;
+      }
+      if (retries < maxRetries) {
+        retries++;
+        this.service.logger.add({
+          module: EModule.background,
+          event: "service.controller.downloadFailedRetries",
+          msg:
+            this.service.i18n.t("service.controller.downloadError", {
+              name: clientConfig.options.name,
+              action: EAction.addTorrentFromURL
+            }) +
+            " (" +
+            retries +
+            ")", // `下载服务器${clientConfig.options.name}处理[${EAction.addTorrentFromURL}]命令失败`,
+          data: failedMsg
+        });
+
+        this.downloadFailedRetriesCache[downloadOptions.url] = retries;
+
+        // 是否需要延时下载
+        if (
+          this.options.downloadFailedFailedRetryInterval &&
+          this.options.downloadFailedFailedRetryInterval > 0
+        ) {
+          setTimeout(() => {
+            this.doDownload(clientConfig, downloadOptions, host)
+              .then((result: any) => {
+                resolve(result);
+              })
+              .catch((result: any) => {
+                reject(result);
+              });
+          }, this.options.downloadFailedFailedRetryInterval * 1000);
+        } else {
+          this.doDownload(clientConfig, downloadOptions, host)
+            .then((result: any) => {
+              resolve(result);
+            })
+            .catch((result: any) => {
+              reject(result);
+            });
+        }
+
+        return true;
+      }
+
+      delete this.downloadFailedRetriesCache[downloadOptions.url];
+    }
+    return false;
   }
 
   /**
@@ -352,10 +500,18 @@ export default class Controller {
       let result: DataResult = {
         type: EDataResultType.success,
         msg:
-          `${downloadOptions.title || ""} 种子已添加完成。` +
+          this.service.i18n.t("service.controller.torrentAdded", {
+            name: downloadOptions.title
+          }) +
           (downloadOptions.savePath
-            ? `<br/>保存至 ${downloadOptions.savePath}`
-            : ""),
+            ? this.service.i18n.t("service.controller.torrentSavePath", {
+                path: downloadOptions.savePath,
+                interpolation: { escapeValue: false }
+              })
+            : ""), //`${downloadOptions.title || ""} 种子已添加完成。` +
+        // (downloadOptions.savePath
+        //   ? `<br/>保存至 ${downloadOptions.savePath}`
+        //   : ""),
         success: true,
         data: data
       };
@@ -364,9 +520,20 @@ export default class Controller {
         // transmission
         case EDownloadClientType.transmission:
           if (data.id != undefined) {
-            result.msg = data.name + " 已发送至 Transmission，编号：" + data.id;
+            result.msg = this.service.i18n.t(
+              "service.controller.transmissionSuccess",
+              {
+                data
+              }
+            ); //data.name + " 已发送至 Transmission，编号：" + data.id;
             if (downloadOptions.savePath) {
-              result.msg += `<br/>保存至 ${downloadOptions.savePath} `;
+              result.msg += this.service.i18n.t(
+                "service.controller.torrentSavePath",
+                {
+                  path: downloadOptions.savePath,
+                  interpolation: { escapeValue: false }
+                }
+              ); //`<br/>保存至 ${downloadOptions.savePath} `;
             }
           } else if (data.status) {
             switch (data.status) {
@@ -374,14 +541,22 @@ export default class Controller {
               case "duplicate":
                 result.type = EDataResultType.error;
                 result.success = false;
-                result.msg =
-                  data.torrent.name + " 种子已存在！编号：" + data.torrent.id;
+                result.msg = this.service.i18n.t(
+                  "service.controller.transmissionDuplicate",
+                  {
+                    name: data.torrent.name,
+                    id: data.torrent.id
+                  }
+                );
+                //data.torrent.name + " 种子已存在！编号：" + data.torrent.id;
                 break;
 
               case "error":
                 result.type = EDataResultType.error;
                 result.success = false;
-                result.msg = "链接发送失败，请检查下载服务器是否可用。";
+                result.msg = this.service.i18n.t(
+                  "service.controller.transmissionError"
+                ); //"链接发送失败，请检查下载服务器是否可用。";
                 break;
               default:
                 result.msg = data.msg;
@@ -689,10 +864,20 @@ export default class Controller {
 
   /**
    * 从指定的链接获取种子文件内容
-   * @param url
+   * @param options
    */
-  public getTorrentDataFromURL(url: string): Promise<any> {
+  public getTorrentDataFromURL(options: string | any): Promise<any> {
     return new Promise<any>((resolve?: any, reject?: any) => {
+      let url = "";
+      if (typeof options === "string") {
+        url = options;
+        options = {
+          url,
+          parseTorrent: false
+        };
+      } else {
+        url = options.url;
+      }
       let site = this.getSiteOptionsFromURL(url);
       let requestMethod = ERequestMethod.GET;
       if (site) {
@@ -711,9 +896,41 @@ export default class Controller {
           file.content &&
           /octet-stream|x-bittorrent/gi.test(file.content.type)
         ) {
-          resolve(file.content);
+          parseTorrent.remote(file.content, (err, torrent) => {
+            if (err) {
+              console.log("parse.error", err);
+              // 是否解析种子文件
+              if (options.parseTorrent) {
+                reject(err);
+              } else {
+                resolve(file.content);
+              }
+            } else {
+              // 缓存种子文件名称
+              if (torrent) {
+                this.torrentInfosCache[url] = torrent.name;
+              }
+
+              // 是否解析种子文件
+              if (options.parseTorrent) {
+                resolve({
+                  url,
+                  torrent
+                });
+              } else {
+                resolve(file.content);
+              }
+            }
+          });
         } else {
-          reject(APP.createErrorMessage("无效的种子文件"));
+          // "无效的种子文件"
+          reject(
+            APP.createErrorMessage(
+              this.service.i18n.t("service.controller.invalidTorrent", {
+                link: EWikiLink.faq
+              })
+            )
+          );
         }
       };
 
@@ -774,7 +991,10 @@ export default class Controller {
       });
 
       if (completed == count && completed == 0) {
-        reject("没有站点需要获取用户信息");
+        // "没有站点需要获取用户信息"
+        reject(
+          this.service.i18n.t("service.controller.getUserInfoSiteIsEmpty")
+        );
       }
     });
   }
@@ -819,7 +1039,12 @@ export default class Controller {
           };
           reader.readAsDataURL(file.content);
         } else {
-          reject(APP.createErrorMessage("无效的图片文件"));
+          // "无效的图片文件"
+          reject(
+            APP.createErrorMessage(
+              this.service.i18n.t("service.controller.invalidImage")
+            )
+          );
         }
       };
 
@@ -835,6 +1060,13 @@ export default class Controller {
     return new Promise<any>((resolve?: any, reject?: any) => {
       let data = this.service.userData.get(host, EUserDataRange.all);
       resolve(data);
+    });
+  }
+
+  public resetUserDatas(datas: any) {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      this.service.userData.reset(datas);
+      resolve();
     });
   }
 
@@ -858,7 +1090,7 @@ export default class Controller {
    * 根据指定的 doubanId 获取 IMDbId
    * @param doubanId
    */
-  public getIMDbIdFromDouban(doubanId: number): Promise<any> {
+  public getIMDbIdFromDouban(doubanId: string): Promise<any> {
     return this.movieInfoService.getIMDbIdFromDouban(doubanId);
   }
 
@@ -901,9 +1133,229 @@ export default class Controller {
         .catch(() => {
           reject({
             success: false,
-            msg: "无权限，请前往用户授权"
+            msg: this.service.i18n.t("service.controller.noPermission") //"无权限，请前往用户授权"
           });
         });
     });
+  }
+
+  /**
+   * 获取当前语言资源
+   * @param parentKey 指定这个key下的内容
+   */
+  public getCurrentLanguageResource(parentKey: string): Promise<any> {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      let locale = this.service.options.locale || "en";
+      let resource = this.service.i18n.i18next.getResourceBundle(
+        locale,
+        "translation"
+      );
+
+      if (resource) {
+        if (parentKey && resource[parentKey]) {
+          resolve(resource[parentKey]);
+        } else {
+          resolve(resource);
+        }
+      } else {
+        reject();
+      }
+    });
+  }
+
+  public addLanguage(resource: i18nResource): Promise<any> {
+    return this.service.i18n.add(resource);
+  }
+
+  public replaceLanguage(resource: i18nResource): Promise<any> {
+    return this.service.i18n.replace(resource);
+  }
+
+  public backupToServer(server: IBackupServer): Promise<any> {
+    return this.service.config.backupToServer(server);
+  }
+
+  public getBackupListFromServer(options: any = {}): Promise<any> {
+    const server = options.server;
+    delete options.server;
+    return this.service.config.getBackupListFromServer(server, options);
+  }
+
+  public restoreFromServer(options: any = {}): Promise<any> {
+    return this.service.config.restoreFromServer(options.server, options.path);
+  }
+
+  public deleteFileFromBackupServer(options: any = {}): Promise<any> {
+    return this.service.config.deleteFileFromBackupServer(
+      options.server,
+      options.path
+    );
+  }
+
+  public sendTorrentsInBackground(items: any[] = []): Promise<any> {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      this.service.downloadQuene.add(items).run();
+      resolve(
+        this.service.i18n.t("service.controller.downloadTaskIsCreated", {
+          count: items.length
+        })
+      );
+    });
+  }
+
+  public createBackupFile(fileName: string): Promise<any> {
+    return this.service.config.createBackupFile(fileName);
+  }
+
+  public addTorrentToCollection(data: any): Promise<any> {
+    if (this.options.defaultCollectionGroupId) {
+      data.groups = [this.options.defaultCollectionGroupId];
+    }
+    return this.service.collection.add(data);
+  }
+
+  public getTorrentCollections(groupId?: string): Promise<any> {
+    return this.service.collection.load(groupId);
+  }
+
+  public deleteTorrentFromCollention(data: any): Promise<any> {
+    if (Array.isArray(data)) {
+      return this.service.collection.remove(data);
+    }
+    return this.service.collection.delete(data);
+  }
+
+  public clearTorrentCollention(): Promise<any> {
+    return this.service.collection.clear();
+  }
+
+  public getTorrentCollention(link: string): Promise<any> {
+    return this.service.collection.get(link);
+  }
+
+  public getSiteSelectorConfig(options: any): Promise<any> {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      const result = this.service.getSiteSelector(options.host, options.name);
+      if (result) {
+        resolve(result);
+      } else {
+        reject(false);
+      }
+    });
+  }
+
+  public resetTorrentCollections(items: any): Promise<any> {
+    return this.service.collection.reset(items);
+  }
+
+  public getTorrentCollectionGroups(): Promise<any> {
+    return this.service.collection.getGroups();
+  }
+
+  public addTorrentCollectionGroup(data: any): Promise<any> {
+    return this.service.collection.addGroup(data);
+  }
+
+  public addTorrentCollectionToGroup(options: any): Promise<any> {
+    return this.service.collection.addToGroup(options.item, options.groupId);
+  }
+
+  public updateTorrentCollectionGroup(data: any): Promise<any> {
+    return this.service.collection.updateGroup(data);
+  }
+
+  public removeTorrentCollectionFromGroup(options: any): Promise<any> {
+    return this.service.collection.removeFromGroup(
+      options.item,
+      options.groupId
+    );
+  }
+
+  public removeTorrentCollectionGroup(data: any): Promise<any> {
+    return this.service.collection.removeGroup(data);
+  }
+
+  public updateTorrentCollention(data: any): Promise<any> {
+    return this.service.collection.update(data);
+  }
+
+  public getAllTorrentCollectionLinks(): Promise<any> {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      const result = this.service.collection.getAllLinks();
+      if (result) {
+        resolve(result);
+      } else {
+        reject(false);
+      }
+    });
+  }
+
+  public restoreCookies(data: any): Promise<any> {
+    return this.service.config.restoreCookies(data);
+  }
+
+  public resetFavicons(): Promise<any> {
+    this.service.config.favicon.clear();
+    return this.service.config.getFavicons();
+  }
+
+  public getBackupRawData(): Promise<any> {
+    return this.service.config.getBackupRawData();
+  }
+
+  public testBackupServerConnectivity(options: any): Promise<any> {
+    return this.service.config.testBackupServerConnectivity(options);
+  }
+
+  public createSearchResultSnapshot(options: any): Promise<any> {
+    return this.service.searchResultSnapshot.add(options);
+  }
+
+  public getSearchResultSnapshot(id: string): Promise<any> {
+    return this.service.searchResultSnapshot.get(id);
+  }
+
+  public loadSearchResultSnapshot(): Promise<any> {
+    return this.service.searchResultSnapshot.load();
+  }
+
+  public removeSearchResultSnapshot(options: any): Promise<any> {
+    return this.service.searchResultSnapshot.remove(options);
+  }
+
+  public clearSearchResultSnapshot(): Promise<any> {
+    return this.service.searchResultSnapshot.clear();
+  }
+
+  public resetSearchResultSnapshot(datas: any): Promise<any> {
+    return this.service.searchResultSnapshot.reset(datas);
+  }
+
+  public createKeepUploadTask(options: any): Promise<any> {
+    return this.service.keepUploadTask.add(options);
+  }
+
+  public getKeepUploadTask(id: string): Promise<any> {
+    return this.service.keepUploadTask.get(id);
+  }
+
+  public loadKeepUploadTask(): Promise<any> {
+    return this.service.keepUploadTask.load();
+  }
+
+  public removeKeepUploadTask(options: any): Promise<any> {
+    return this.service.keepUploadTask.remove(options);
+  }
+
+  public clearKeepUploadTask(): Promise<any> {
+    return this.service.keepUploadTask.clear();
+  }
+
+  public resetKeepUploadTask(datas: any): Promise<any> {
+    return this.service.keepUploadTask.reset(datas);
+  }
+
+  public updateKeepUploadTask(options: any): Promise<any> {
+    return this.service.keepUploadTask.update(options);
   }
 }

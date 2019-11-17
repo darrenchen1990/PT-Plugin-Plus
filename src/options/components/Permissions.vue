@@ -6,8 +6,8 @@
 
         <v-card-title class="pb-1">
           <div v-if="!cancelled">
-            <h3 class="title mb-2">{{ words.title }}</h3>
-            <h3>{{ words.subtitle }}</h3>
+            <h3 class="title mb-2">{{ $t("permissions.title") }}</h3>
+            <h3>{{ $t("permissions.subtitle") }}</h3>
 
             <v-data-table
               v-model="selected"
@@ -21,7 +21,7 @@
                 <td>
                   <v-checkbox v-model="props.selected" primary hide-details></v-checkbox>
                 </td>
-                <td>{{ props.item.title }}</td>
+                <td>{{ $t(props.item.title) }}</td>
                 <td>
                   <v-switch
                     true-value="true"
@@ -33,16 +33,9 @@
                 </td>
               </template>
             </v-data-table>
-            <div class="mt-1 ml-3">
-              <li
-                class="subheading"
-                v-for="(item, index) in words.permissions"
-                :key="index"
-              >{{item}}</li>
-            </div>
           </div>
 
-          <div v-else class="title mb-2">{{ words.cancelled }}</div>
+          <div v-else class="title mb-2">{{ $t("permissions.cancelled") }}</div>
         </v-card-title>
 
         <v-card-actions v-if="!cancelled">
@@ -51,8 +44,8 @@
             color="success"
             :disabled="selected.length==0"
             @click="authorize"
-          >{{ words.authorize }}</v-btn>
-          <v-btn flat color="orange" @click="cancel">{{ words.cancel }}</v-btn>
+          >{{ $t("permissions.authorize") }}</v-btn>
+          <v-btn flat color="orange" @click="cancel">{{ $t("permissions.cancel") }}</v-btn>
         </v-card-actions>
       </v-card>
     </v-flex>
@@ -63,32 +56,17 @@ import Vue from "vue";
 export default Vue.extend({
   data() {
     return {
-      words: {
-        title: "感谢您选择 PT 助手",
-        subtitle: "为了不影响正常使用，请对需要的功能进行授权：",
-        authorize: "授权",
-        cancel: "我不用了",
-        cancelled: "世界如此之大，期待有缘再相会！"
-      },
       permissions: [
         {
-          key: "*://*/*",
-          title: "所有网站的访问权限，用于搜索和读取做种数据；",
+          origins: ["http://*/*", "https://*/*"],
+          title: "permissions.details.allSites",
           isOrigin: true
         },
-        { key: "tabs", title: "活动选项卡的读取权限，用于显示助手图标；" },
-        { key: "downloads", title: "下载权限，用于批量下载种子文件" }
+        { key: "tabs", title: "permissions.details.tabs" },
+        { key: "downloads", title: "permissions.details.downloads" },
+        { key: "cookies", title: "permissions.details.cookies" }
       ],
       selected: [] as any,
-      headers: [
-        {
-          text: "权限描述",
-          align: "left",
-          sortable: false,
-          value: "title"
-        },
-        { text: "已授权", align: "left", value: "enabled", sortable: false }
-      ],
       cancelled: false,
       items: [] as any
     };
@@ -105,7 +83,7 @@ export default Vue.extend({
         };
         this.selected.forEach((item: any) => {
           if (item.isOrigin) {
-            options.origins.push(item.key);
+            options.origins.push(...item.origins);
           } else {
             options.permissions.push(item.key);
           }
@@ -126,7 +104,7 @@ export default Vue.extend({
       let options = {};
       if (item.isOrigin) {
         options = {
-          origins: [item.key]
+          origins: item.origins
         };
       } else {
         options = {
@@ -156,7 +134,7 @@ export default Vue.extend({
       let options = {};
       if (item.isOrigin) {
         options = {
-          origins: [item.key]
+          origins: item.origins
         };
       } else {
         options = {
@@ -168,6 +146,24 @@ export default Vue.extend({
         this.items.push(Object.assign({ enabled: result }, item));
       });
     });
+  },
+  computed: {
+    headers(): Array<any> {
+      return [
+        {
+          text: this.$t("permissions.headers.title"),
+          align: "left",
+          sortable: false,
+          value: "title"
+        },
+        {
+          text: this.$t("permissions.headers.enabled"),
+          align: "left",
+          value: "enabled",
+          sortable: false
+        }
+      ];
+    }
   }
 });
 </script>

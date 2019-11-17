@@ -1,15 +1,44 @@
 <template>
   <div class="site-plugins">
-    <v-alert :value="true" type="info">{{ words.title }} [{{ site.name }}]</v-alert>
+    <v-alert
+      :value="true"
+      type="info"
+    >{{ $t('settings.sitePlugins.index.title') }} [{{ site.name }}]</v-alert>
     <v-card>
       <v-card-title>
         <v-btn color="success" @click="add">
           <v-icon class="mr-2">add</v-icon>
-          {{words.add}}
+          {{$t('common.add')}}
         </v-btn>
         <v-btn color="error" :disabled="selected.length==0" @click="removeSelected">
           <v-icon class="mr-2">remove</v-icon>
-          {{words.remove}}
+          {{$t('common.remove')}}
+        </v-btn>
+        <v-divider class="mx-3 mt-0" inset vertical></v-divider>
+
+        <input
+          type="file"
+          ref="fileImport"
+          style="display:none;"
+          multiple
+          accept="application/json"
+        />
+        <!-- 导入配置文件 -->
+        <v-btn color="info" @click="importConfig">
+          <v-icon class="mr-2">folder_open</v-icon>
+          {{$t('settings.sites.index.importConfig')}}
+        </v-btn>
+
+        <v-divider class="mx-3 mt-0" inset vertical></v-divider>
+
+        <v-btn
+          color="info"
+          href="https://github.com/ronggang/PT-Plugin-Plus/wiki/config-custom-plugin"
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+        >
+          <v-icon class="mr-2">help</v-icon>
+          {{ $t('settings.siteSearchEntry.index.help') }}
         </v-btn>
         <v-spacer></v-spacer>
         <v-text-field class="search" append-icon="search" label="Search" single-line hide-details></v-text-field>
@@ -28,10 +57,9 @@
             <v-checkbox v-model="props.selected" primary hide-details v-if="props.item.isCustom"></v-checkbox>
           </td>
           <td>
-            <a @click="edit(props.item.id)" v-if="props.item.isCustom">
+            <a @click="edit(props.item)">
               <span class="ml-2">{{ props.item.name }}</span>
             </a>
-            <span class="ml-2" v-else>{{ props.item.name }}</span>
           </td>
           <td>
             <v-chip
@@ -48,28 +76,46 @@
           </td>
           <td>{{ props.item.url }}</td>
           <td>
-            <v-icon small class="mr-2" @click="edit(props.item.id)" v-if="props.item.isCustom">edit</v-icon>
+            <v-icon
+              small
+              class="mr-2"
+              @click="edit(props.item)"
+              :title="$t('common.edit')"
+              v-if="props.item.isCustom"
+            >edit</v-icon>
             <v-icon
               small
               color="error"
               @click="removeConfirm(props.item)"
+              :title="$t('common.remove')"
               v-if="props.item.isCustom"
             >delete</v-icon>
+
+            <v-icon
+              small
+              color="info"
+              class="ml-2"
+              @click="share(props.item)"
+              :title="$t('common.share')"
+              v-if="props.item.isCustom"
+            >share</v-icon>
           </td>
         </template>
       </v-data-table>
     </v-card>
 
     <!-- 新增插件 -->
-    <AddItem v-model="showAddDialog" @save="addItem"/>
+    <AddItem v-model="showAddDialog" @save="addItem" />
     <!-- 编辑插件 -->
-    <EditItem v-model="showEditDialog" :data="selectedItem" @save="updateItem"/>
+    <EditItem v-model="showEditDialog" :initData="selectedItem" @save="updateItem" />
 
     <v-dialog v-model="dialogRemoveConfirm" width="300">
       <v-card>
-        <v-card-title class="headline red lighten-2">{{ words.removeTitle }}</v-card-title>
+        <v-card-title
+          class="headline red lighten-2"
+        >{{ $t('settings.sitePlugins.index.removeTitle') }}</v-card-title>
 
-        <v-card-text>{{ words.removeConfirm }}</v-card-text>
+        <v-card-text>{{ $t('settings.sitePlugins.index.removeConfirm') }}</v-card-text>
 
         <v-divider></v-divider>
 
@@ -77,25 +123,31 @@
           <v-spacer></v-spacer>
           <v-btn flat color="info" @click="dialogRemoveConfirm=false">
             <v-icon>cancel</v-icon>
-            <span class="ml-1">{{ words.cancel }}</span>
+            <span class="ml-1">{{ $t('common.cancel') }}</span>
           </v-btn>
           <v-btn color="error" flat @click="remove">
             <v-icon>check_circle_outline</v-icon>
-            <span class="ml-1">{{ words.ok }}</span>
+            <span class="ml-1">{{ $t('common.ok') }}</span>
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <v-snackbar v-model="haveError" top :timeout="3000" color="error">{{ errorMsg }}</v-snackbar>
+    <v-snackbar v-model="haveSuccess" bottom :timeout="3000" color="success">{{ successMsg }}</v-snackbar>
   </div>
 </template>
 
 <script lang="ts">
 import Vue from "vue";
-import { Site } from "../../../../interface/common";
+import { Site, Plugin } from "@/interface/common";
 import AddItem from "./Add.vue";
 import EditItem from "./Edit.vue";
 
 import { filters } from "@/service/filters";
+import { PPF } from "@/service/public";
+import FileSaver from "file-saver";
+
 export default Vue.extend({
   components: {
     AddItem,
@@ -103,49 +155,43 @@ export default Vue.extend({
   },
   data() {
     return {
-      words: {
-        title: "站点插件配置",
-        add: "新增",
-        remove: "删除",
-        importAll: "导入所有",
-        removeSelectedConfirm: "确认要删除已选中的站点吗？",
-        removeConfirm: "确认要删除这个插件吗？",
-        removeTitle: "删除确认",
-        ok: "确认",
-        cancel: "取消"
-      },
       selected: [],
       pagination: {
         rowsPerPage: -1
       },
       showAddDialog: false,
       showEditDialog: false,
-      siteDuplicate: false,
-      siteDuplicateText: "该站点已存在",
-      headers: [
-        { text: "名称", align: "left", value: "name" },
-        { text: "适用页面", align: "left", value: "pages" },
-        { text: "启用", align: "left", value: "enable" },
-        { text: "操作", value: "name", sortable: false }
-      ],
       site: {} as Site,
-      selectedItem: {},
+      selectedItem: {
+        name: "",
+        id: null,
+        pages: [],
+        scripts: [],
+        styles: [],
+        script: "",
+        style: "",
+        readonly: false
+      } as any,
       dialogRemoveConfirm: false,
-      plugins: [] as any
+      plugins: [] as any,
+      fileImport: null as any,
+      errorMsg: "",
+      haveError: false,
+      haveSuccess: false,
+      successMsg: ""
     };
   },
   methods: {
     add() {
       this.showAddDialog = true;
     },
-    edit(id: any) {
-      let item = (this.site as any).plugins.find((item: any) => {
-        return item.id === id;
-      });
-      if (item) {
-        this.selectedItem = item;
-        this.showEditDialog = true;
+    edit(source: any) {
+      this.selectedItem = PPF.clone(source);
+      if (!source.id) {
+        this.selectedItem.readonly = true;
       }
+
+      this.showEditDialog = true;
     },
     removeConfirm(item: any) {
       this.selectedItem = item;
@@ -161,12 +207,18 @@ export default Vue.extend({
       this.reloadPlugins(this.site.host);
     },
     removeSelected() {
-      if (confirm(this.words.removeSelectedConfirm)) {
-        this.selected.forEach((item: any) => {
-          this.$store.commit("removePlugin", {
-            host: this.site.host,
-            plugin: item
-          });
+      if (
+        confirm(
+          this.$t("settings.sitePlugins.index.removeSelectedConfirm").toString()
+        )
+      ) {
+        this.selected.forEach((item: Plugin) => {
+          if (item.isCustom) {
+            this.$store.commit("removePlugin", {
+              host: this.site.host,
+              plugin: item
+            });
+          }
         });
         this.selected = [];
         this.reloadPlugins(this.site.host);
@@ -224,6 +276,105 @@ export default Vue.extend({
 
         this.plugins = plugins;
       }
+    },
+
+    clearMessage() {
+      this.successMsg = "";
+      this.errorMsg = "";
+    },
+
+    /**
+     * 导出插件
+     */
+    share(item: Plugin) {
+      let fileName =
+        (this.site.host || this.site.name) + "-plugin-" + item.name + ".json";
+
+      const blob = new Blob([JSON.stringify(item)], {
+        type: "text/plain"
+      });
+      FileSaver.saveAs(blob, fileName);
+    },
+    /**
+     * 导入配置文件
+     */
+    importConfig() {
+      this.fileImport.click();
+    },
+
+    importConfigFile(event: Event) {
+      this.clearMessage();
+      let inputDOM: any = event.srcElement;
+      if (inputDOM.files.length > 0 && inputDOM.files[0].name.length > 0) {
+        for (let index = 0; index < inputDOM.files.length; index++) {
+          const file = inputDOM.files[index];
+          const r = new FileReader();
+          r.onload = (e: any) => {
+            try {
+              const result = JSON.parse(e.target.result);
+              this.importPlugin(result);
+            } catch (error) {
+              console.log(error);
+              this.errorMsg = this.$t("common.importFailed").toString();
+            }
+          };
+          r.onerror = () => {
+            this.errorMsg = this.$t("settings.backup.loadError").toString();
+          };
+          r.readAsText(file);
+        }
+
+        inputDOM.value = "";
+      }
+    },
+
+    /**
+     * 导入插件信息
+     */
+    importPlugin(source: Plugin) {
+      if (
+        !(
+          source.name &&
+          source.id &&
+          source.isCustom &&
+          source.pages &&
+          source.pages.length > 0
+        )
+      ) {
+        this.errorMsg = this.$t(
+          "settings.sitePlugins.index.invalidPlugin"
+        ).toString();
+        return;
+      }
+      const plugin = this.getPlugin(source);
+      if (plugin) {
+        const newName = window.prompt(
+          this.$t("settings.sitePlugins.index.importNameDuplicate", {
+            name: plugin.name
+          }).toString()
+        );
+
+        if (newName) {
+          source.name = newName;
+          this.importPlugin(source);
+          return;
+        } else {
+          return;
+        }
+      }
+      this.addItem(source);
+
+      this.successMsg = this.$t("common.importSuccess").toString();
+    },
+
+    getPlugin(source: Plugin) {
+      const plugins = this.site.plugins;
+      if (plugins && plugins.length > 0) {
+        return plugins.find((item: Plugin) => {
+          return item.name === source.name;
+        });
+      }
+      return null;
     }
   },
   created() {
@@ -231,6 +382,47 @@ export default Vue.extend({
     console.log("create", this.$route.params);
     if (host) {
       this.reloadPlugins(host);
+    }
+  },
+  mounted() {
+    this.fileImport = this.$refs.fileImport;
+    this.fileImport.addEventListener("change", this.importConfigFile);
+  },
+  beforeDestroy() {
+    this.fileImport.removeEventListener("change", this.importConfigFile);
+  },
+  computed: {
+    headers(): Array<any> {
+      return [
+        {
+          text: this.$t("settings.sitePlugins.index.headers.name"),
+          align: "left",
+          value: "name"
+        },
+        {
+          text: this.$t("settings.sitePlugins.index.headers.pages"),
+          align: "left",
+          value: "pages"
+        },
+        {
+          text: this.$t("settings.sitePlugins.index.headers.enable"),
+          align: "left",
+          value: "enable"
+        },
+        {
+          text: this.$t("settings.sitePlugins.index.headers.action"),
+          value: "name",
+          sortable: false
+        }
+      ];
+    }
+  },
+  watch: {
+    successMsg() {
+      this.haveSuccess = this.successMsg != "";
+    },
+    errorMsg() {
+      this.haveError = this.errorMsg != "";
     }
   }
 });

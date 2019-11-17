@@ -1,9 +1,11 @@
 import { Dictionary, ERequestResultType } from "@/interface/common";
 import dayjs from "dayjs";
-import PTPlugin from "./service";
-type Service = PTPlugin;
+import { PPF } from "@/service/public";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+dayjs.extend(customParseFormat);
+
 export class InfoParser {
-  constructor(public service: Service) {}
+  constructor() {}
   /**
    * 根据指定规则和原始获取需要的数据
    * @param content 原始内容
@@ -31,8 +33,9 @@ export class InfoParser {
 
   /**
    * 获取字段信息
-   * @param content
-   * @param config
+   * @param content 原始内容
+   * @param config 当前字段定义信息
+   * @param rule 选择器规则
    */
   getFieldData(content: any, config: any, rule: any) {
     let query: any;
@@ -75,7 +78,7 @@ export class InfoParser {
 
         selectorIndex++;
       } catch (error) {
-        this.service.debug("InfoParser.getFieldData.Error", selector, error);
+        PPF.debug("InfoParser.getFieldData.Error", selector, error);
         return true;
       }
     });
@@ -85,7 +88,7 @@ export class InfoParser {
     let dateTime = dayjs;
     let _self = this;
     if (query != null) {
-      if (config.attribute || config.filters) {
+      if (config.attribute || config.filters || config.switchFilters) {
         if (config.attribute && rule.dataType != ERequestResultType.JSON) {
           query = query.attr(config.attribute);
         }
@@ -100,13 +103,15 @@ export class InfoParser {
         }
 
         if (filters) {
-          filters.forEach((filter: string) => {
+          filters.every((filter: string) => {
             try {
               query = eval(filter);
             } catch (error) {
-              this.service.debug("InfoParser.filter.Error", filter, error);
-              return;
+              PPF.debug("InfoParser.filter.Error", filter, error);
+              query = null;
+              return false;
             }
+            return true;
           });
         }
         result = query;
@@ -132,26 +137,40 @@ export class InfoParser {
   getTotalSize(datas: string[]) {
     let total: number = 0.0;
 
-    console.log(datas);
-
     datas.forEach((item: string) => {
-      let size = parseFloat(item.replace(/[A-Za-z]/g, ""));
-      let unit = item.replace(/[^A-Za-z]/g, "").toLowerCase();
+      let match = item.match(/^(\d*\.?\d+)(.*[^ZEPTGMK])?([ZEPTGMK](B|iB)?)$/i);
+      if (!match) {
+        return;
+      }
+      let size = parseFloat(match[1]);
+      let unit = match[3].toLowerCase();
       switch (true) {
         case /ki?b/.test(unit):
-          total += size * 1024;
+          total += size * Math.pow(2, 10);
           break;
 
         case /mi?b/.test(unit):
-          total += size * 1048576;
+          total += size * Math.pow(2, 20);
           break;
 
         case /gi?b/.test(unit):
-          total += size * 1073741824;
+          total += size * Math.pow(2, 30);
           break;
 
         case /ti?b?/.test(unit):
-          total += size * 1099511627776;
+          total += size * Math.pow(2, 40);
+          break;
+
+        case /pi?b?/.test(unit):
+          total += size * Math.pow(2, 50);
+          break;
+
+        case /ei?b?/.test(unit):
+          total += size * Math.pow(2, 60);
+          break;
+
+        case /zi?b?/.test(unit):
+          total += size * Math.pow(2, 70);
           break;
       }
     });

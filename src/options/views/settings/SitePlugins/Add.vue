@@ -1,24 +1,38 @@
 <template>
   <div>
-    <v-dialog v-model="show" max-width="800">
+    <v-dialog v-model="show" fullscreen>
       <v-card>
-        <v-card-title class="headline blue-grey darken-2" style="color:white">{{ words.title }}</v-card-title>
+        <v-toolbar dark color="blue-grey darken-2">
+          <v-toolbar-title>{{ $t('settings.sitePlugins.add.title') }}</v-toolbar-title>
+          <v-spacer></v-spacer>
+          <v-btn
+            icon
+            flat
+            color="success"
+            href="https://github.com/ronggang/PT-Plugin-Plus/wiki/config-custom-plugin"
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            :title="$t('common.help')"
+          >
+            <v-icon>help</v-icon>
+          </v-btn>
+        </v-toolbar>
 
-        <v-card-text>
-          <Editor :data="selected"/>
+        <v-card-text class="body">
+          <Editor :initData="selected" @change="change" />
         </v-card-text>
 
         <v-divider></v-divider>
 
-        <v-card-actions class="pa-3">
+        <v-card-actions class="pa-3 toolbar">
           <v-spacer></v-spacer>
           <v-btn flat color="error" @click="cancel">
             <v-icon>cancel</v-icon>
-            <span class="ml-1">{{ words.cancel }}</span>
+            <span class="ml-1">{{ $t('common.cancel') }}</span>
           </v-btn>
-          <v-btn flat color="success" @click="save" :disabled="!selected.valid">
+          <v-btn flat color="success" @click="save" :disabled="!valid">
             <v-icon>check_circle_outline</v-icon>
-            <span class="ml-1">{{ words.ok }}</span>
+            <span class="ml-1">{{ $t('common.ok') }}</span>
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -34,14 +48,14 @@ export default Vue.extend({
   },
   data() {
     return {
-      words: {
-        title: "新增插件",
-        ok: "确认",
-        cancel: "取消"
-      },
       show: false,
-      selected: {} as any,
-      valid: false
+      selected: {
+        script: `(function() {
+  console.log("I'm a plugin.");
+})();`
+      } as any,
+      valid: false,
+      newData: {}
     };
   },
   props: {
@@ -64,12 +78,30 @@ export default Vue.extend({
   },
   methods: {
     save() {
-      this.$emit("save", Object.assign({ isCustom: true }, this.selected));
+      this.$emit("save", Object.assign({ isCustom: true }, this.newData));
       this.show = false;
     },
     cancel() {
       this.show = false;
+    },
+    change(options: any) {
+      console.log(options);
+      this.newData = options.data;
+      this.valid = options.valid;
     }
   }
 });
 </script>
+<style lang="scss" scoped>
+.body {
+  position: absolute;
+  bottom: 65px;
+  top: 65px;
+  overflow-y: auto;
+}
+.toolbar {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+}
+</style>

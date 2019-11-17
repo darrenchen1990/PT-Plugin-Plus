@@ -25,7 +25,26 @@ export class MovieInfoService {
     "4ee790e0",
     "d82cb888",
     "d58193b6",
-    "15c0aa3f"
+    "15c0aa3f",
+    "53acf36d",
+    "3a864b75",
+    "2892ab46",
+    "b507af90",
+    "7cf67120",
+    "85b2a90c",
+    "2896ff0a",
+    "aa4b9983",
+    "c4e08870",
+    "5d5c0049",
+    "79a462f2",
+    "e4c3fce8",
+    "918d70df",
+    "e94cb667",
+    "eb84d6d7",
+    "e192b5a",
+    "d62b4cf5",
+    "5e6442a3",
+    "9b1468c6"
   ];
   // 豆瓣 apikey
   public doubanApiKeys = [
@@ -108,6 +127,39 @@ export class MovieInfoService {
   }
 
   /**
+   * 根据豆瓣ID获取影片信息
+   * @param id
+   */
+  public getInfoFromDoubanId(id: string): Promise<any> {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      if (/^(\d+)$/.test(id)) {
+        let cache = this.cache.base[id];
+        if (cache) {
+          resolve(cache);
+          return;
+        }
+        let url = `${
+          this.doubanApiURL
+        }/movie/subject/${id}?apikey=${this.getDoubanApiKey()}`;
+
+        $.ajax({
+          url: url,
+          timeout: this.timeout
+        })
+          .done(json => {
+            this.cache.base[id] = json;
+            resolve(json);
+          })
+          .fail(error => {
+            reject(error);
+          });
+      } else {
+        reject("error douban id");
+      }
+    });
+  }
+
+  /**
    * 获取评分信息
    * @param IMDbId
    */
@@ -120,28 +172,49 @@ export class MovieInfoService {
           return;
         }
 
-        // 每个Key 1000 一天的限制
-        let apikey = this.omdbApiKeys[
-          Math.floor(Math.random() * this.omdbApiKeys.length)
-        ];
-        let url = `${
-          this.omdbApiURL
-        }/?i=${IMDbId}&apikey=${apikey}&tomatoes=true`;
-        $.ajax({
-          url: url,
-          timeout: this.timeout
-        })
-          .done(json => {
-            this.cache.ratings[IMDbId] = json;
-            resolve(json);
+        let requestCount = 0;
+        const request = () => {
+          // 每个Key 1000 一天的限制
+          let apikey = this.getOmdbApiKey();
+          let url = `${this.omdbApiURL}/?i=${IMDbId}&apikey=${apikey}&tomatoes=true`;
+          $.ajax({
+            url: url,
+            timeout: this.timeout
           })
-          .fail(error => {
-            reject(error);
-          });
+            .done(json => {
+              // 当发生错误时，更换Key进行重试
+              if (json && json.Error) {
+                requestCount++;
+                if (requestCount >= 5) {
+                  reject(json);
+                  return;
+                }
+                this.removeApiKey("omdb", apikey);
+                request();
+                return;
+              }
+              this.cache.ratings[IMDbId] = json;
+              resolve(json);
+            })
+            .fail(error => {
+              reject(error);
+            });
+        };
+        request();
       } else {
         reject("error IMDbId");
       }
     });
+  }
+
+  /**
+   * 从OMDb apikey列表中随机获取一个key
+   */
+  public getOmdbApiKey() {
+    // 随机获取一个key
+    return this.omdbApiKeys[
+      Math.floor(Math.random() * this.omdbApiKeys.length)
+    ];
   }
 
   /**
@@ -168,7 +241,7 @@ export class MovieInfoService {
    * 根据指定的 doubanId 获取 IMDbId
    * @param doubanId
    */
-  public getIMDbIdFromDouban(doubanId: number): Promise<any> {
+  public getIMDbIdFromDouban(doubanId: string): Promise<any> {
     return new Promise<any>((resolve?: any, reject?: any) => {
       let cache = this.cache.doubanToIMDb[doubanId];
       if (cache) {
@@ -229,6 +302,108 @@ export class MovieInfoService {
             resolve(result);
           } else {
             reject(result);
+          }
+        })
+        .fail(error => {
+          reject(error);
+        });
+    });
+  }
+
+  /**
+   * 追加API Key
+   * @param type
+   * @param keys
+   */
+  public appendApiKey(type: string = "", keys: string[]) {
+    let apiKeys: string[];
+    switch (type) {
+      case "omdb":
+        apiKeys = this.omdbApiKeys;
+        break;
+
+      case "douban":
+        apiKeys = this.doubanApiKeys;
+        break;
+    }
+
+    keys.forEach(key => {
+      if (key && !apiKeys.includes(key)) {
+        apiKeys.push(key);
+      }
+    });
+  }
+
+  /**
+   * 移除指定的Key
+   * @param type
+   * @param key
+   */
+  private removeApiKey(type: string = "", key: string) {
+    let apiKeys: string[] = [];
+    switch (type) {
+      case "omdb":
+        apiKeys = this.omdbApiKeys;
+        break;
+
+      case "douban":
+        apiKeys = this.doubanApiKeys;
+        break;
+    }
+
+    let index = apiKeys.findIndex(item => {
+      if (item === key) {
+        return true;
+      }
+    });
+
+    if (index !== -1) {
+      apiKeys.splice(index, 1);
+    }
+  }
+
+  /**
+   * 验证 OMDB API Key
+   * @param key
+   */
+  public verifyOmdbApiKey(key: string): Promise<any> {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      let url = `${this.omdbApiURL}/?i=tt0111161&apikey=${key}&tomatoes=true`;
+
+      $.ajax({
+        url: url,
+        timeout: this.timeout
+      })
+        .done(json => {
+          if (json && json.Error) {
+            reject(json.Error);
+            return;
+          }
+          resolve();
+        })
+        .fail(error => {
+          reject(error);
+        });
+    });
+  }
+
+  /**
+   * 验证豆瓣Api Key
+   * @param key
+   */
+  public verifyDoubanApiKey(key: string): Promise<any> {
+    return new Promise<any>((resolve?: any, reject?: any) => {
+      let url = `${this.doubanApiURL}/movie/imdb/tt0111161?apikey=${key}`;
+
+      $.ajax({
+        url: url,
+        timeout: this.timeout
+      })
+        .done(json => {
+          if (json && json.title) {
+            resolve();
+          } else {
+            reject(json.Error);
           }
         })
         .fail(error => {

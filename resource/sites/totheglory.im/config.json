@@ -27,14 +27,24 @@
       "replaceKey": [
         "tt", "IMDB"
       ]
-    }]
+    }],
+    "fieldSelector": {
+      "progress": {
+        "selector": ["div.process > span"],
+        "filters": ["query.attr('style')||''", "query.match(/width:.?(\\d.+)%/)", "(query && query.length>=2)?query[1]:null"]
+      },
+      "status": {
+        "selector": ["div.process > span"],
+        "filters": ["query.attr('style')||''", "query.match(/width:.?(\\d.+)%/)", "(query && query.length>=2)?query[1]:0", "parseInt(query)==100?2:1"]
+      }
+    }
   },
   "searchEntry": [{
-    "queryString": "c=M",
+    "appendQueryString": "&c=M",
     "name": "影视&音乐",
     "enabled": true
   }, {
-    "queryString": "c=G",
+    "appendQueryString": "&c=G",
     "name": "游戏&软件",
     "enabled": true
   }],
@@ -202,6 +212,14 @@
         "seedingSize": {
           "selector": ["div#ka2 tr:not(:eq(0))"],
           "filters": ["jQuery.map(query.find('td:eq(3)'), (item)=>{return $(item).text();})", "_self.getTotalSize(query)"]
+        }
+      }
+    },
+    "common": {
+      "fields": {
+        "size": {
+          "selector": ["td[valign='top'][align='left']:contains('字节')"],
+          "filters": ["query.text().replace(/,/g,'').match(/([\\d.]+ ?[ZEPTGMK]?i?B)/)", "(query && query.length>1)?(query[1]).sizeToNumber():0"]
         }
       }
     }

@@ -7,7 +7,11 @@ import {
   EAction,
   EDataResultType,
   EUserDataRequestStatus,
-  EBeforeSearchingItemSearchMode
+  EBeforeSearchingItemSearchMode,
+  EBackupServerType,
+  EPluginPosition,
+  EWorkingStatus,
+  EEncryptMode
 } from "./enum";
 
 /**
@@ -41,6 +45,7 @@ export interface ButtonOption {
   click?: Function;
   icon?: string;
   type?: EButtonType;
+  onDrop?: Function;
 }
 
 export interface SystemOptions {
@@ -57,6 +62,26 @@ export interface SearchOptions {
   tags?: string[];
   timeout?: number;
   saveKey?: boolean;
+}
+
+export interface IApiKey {
+  omdb?: string[];
+  douban?: string[];
+}
+
+/**
+ * 备份服务器
+ */
+export interface IBackupServer {
+  id: string;
+  type: EBackupServerType;
+  address: string;
+  name: string;
+  lastBackupTime?: number;
+  loginName?: string;
+  loginPwd?: string;
+  authCode?: string;
+  digest?: boolean;
 }
 
 /**
@@ -106,6 +131,36 @@ export interface Options {
   showMoiveInfoCardOnSearch?: boolean;
   // 在搜索之前一些选项配置
   beforeSearchingOptions?: BeforeSearching;
+  // 在页面中显示工具栏
+  showToolbarOnContentPage?: boolean;
+  // 当前语言
+  locale?: string;
+  // 下载失败重试后是否重试
+  downloadFailedRetry?: boolean;
+  // 下载失败重试次数
+  downloadFailedFailedRetryCount?: number;
+  // 下载失败间隔时间（秒）
+  downloadFailedFailedRetryInterval?: number;
+  // 用户自定义 API Key 列表
+  apiKey?: IApiKey;
+  // 备份服务器列表
+  backupServers?: IBackupServer[];
+  // 批量下载时间间隔（秒）
+  batchDownloadInterval?: number;
+  // 启用后台批量下载
+  enableBackgroundDownload?: boolean;
+  // 插件默认显示位置
+  position?: EPluginPosition;
+  // 默认的收藏分组ID
+  defaultCollectionGroupId?: string;
+  // 允许备份站点 cookies
+  allowBackupCookies?: boolean;
+  // 加密备份的数据
+  encryptBackupData?: boolean;
+  // 加密密钥，本项内容备份时清除
+  encryptSecretKey?: string;
+  // 加密方式
+  encryptMode?: EEncryptMode;
 }
 
 // 在搜索之前一些选项配置
@@ -119,12 +174,14 @@ export interface BeforeSearching {
 }
 
 export interface Plugin {
+  id?: string;
   name?: string;
   pages?: string[] | any;
   scripts?: string[] | any;
   styles?: string[] | any;
   script?: string;
   style?: string;
+  isCustom?: boolean;
 }
 
 export interface SiteSchema {
@@ -194,6 +251,11 @@ export interface Site {
   path?: string;
   // 曾用域名列表，用于数据升级
   formerHosts?: string[];
+  // 离线，设置为true时，不再进行搜索和个人信息获取，保存原数据统计
+  // todo: 后续可根据站点返回的状态码自动设置为离线
+  offline?: boolean;
+  // 是否为自定义
+  isCustom?: boolean;
 }
 
 export interface Request {
@@ -207,6 +269,7 @@ export interface NoticeOptions {
   timeout?: number;
   position?: string;
   text?: string;
+  indeterminate?: boolean;
 }
 
 export interface CacheType {
@@ -281,6 +344,11 @@ export interface SearchResultItem {
   tags?: SearchResultItemTag[];
   entryName?: string;
   category?: SearchResultItemCategory;
+  // 进度（100表示完成）
+  progress?: number;
+  // 状态
+  status?: number;
+  host?: string;
 }
 
 /**
@@ -292,8 +360,12 @@ export interface SearchEntryConfigArea {
   appendQueryString?: string;
   keyAutoMatch?: string;
   replaceKey?: string[];
+  parseScript?: string;
+  // 替换默认页面
+  page?: string;
 }
 
+// 搜索入口默认配置
 export interface SearchEntryConfig {
   page: string;
   entry?: string;
@@ -301,8 +373,14 @@ export interface SearchEntryConfig {
   queryString?: string;
   parseScriptFile?: string;
   parseScript?: string;
+  // 是否异步解析脚本
+  asyncParse?: boolean;
   resultSelector?: string;
   area?: SearchEntryConfigArea[];
+  headers?: Dictionary<any>;
+  fieldSelector?: Dictionary<any>;
+  // 跳过IMDb搜索
+  skipIMDbId?: boolean;
 }
 
 export interface SearchEntry {
@@ -311,6 +389,8 @@ export interface SearchEntry {
   resultType?: ERequestResultType;
   parseScriptFile?: string;
   parseScript?: string;
+  // 是否异步解析脚本
+  asyncParse?: boolean;
   resultSelector?: string;
   enabled?: boolean;
   tagSelectors?: any[];
@@ -319,6 +399,8 @@ export interface SearchEntry {
   queryString?: string;
   categories?: string[];
   appendToSearchKeyString?: string;
+  headers?: Dictionary<any>;
+  appendQueryString?: string;
 }
 
 export interface UIOptions {
@@ -381,4 +463,147 @@ export interface UserInfo {
   lastErrorMsg?: string;
   // 消息数量
   messageCount?: number;
+  [key: string]: any;
+}
+
+export type i18nResource = {
+  name: string;
+  code: string;
+  authors?: Array<string>;
+  words: Dictionary<any>;
+};
+
+// 搜索时附加数据
+export interface ISearchPayload {
+  imdbId?: string;
+  doubanId?: string;
+  cn?: string;
+  en?: string;
+}
+
+export interface IHashData {
+  hash: string;
+  keyMap: number[];
+  length: number;
+}
+
+export interface IManifest {
+  checkInfo: IHashData;
+  version: string;
+  time: number;
+  hash?: string;
+  encryptMode?: EEncryptMode;
+}
+
+/**
+ * 已收藏的种子
+ */
+export interface ICollection {
+  host: string;
+  title: string;
+  // 下载地址
+  url: string;
+  // 种子页面链接
+  link: string;
+  site: any;
+  size: number;
+  time?: number;
+  subTitle?: string;
+  movieInfo?: {
+    title: string;
+    alt_title: string;
+    imdbId?: string;
+    doubanId?: string;
+    image?: string;
+    link?: string;
+    year?: number;
+  };
+  // 分组ID列表
+  groups?: string[];
+}
+
+/**
+ * 收藏分组
+ */
+export interface ICollectionGroup {
+  id?: string;
+  name: string;
+  count?: number;
+  description?: string;
+  image?: string;
+  color?: string;
+  update?: number;
+}
+
+export const BASE_COLORS = [
+  "red",
+  "pink",
+  "purple",
+  "deep-purple",
+  "indigo",
+  "blue",
+  "light-blue",
+  "cyan",
+  "teal",
+  "green",
+  "light-green",
+  "lime",
+  "yellow",
+  "amber",
+  "orange",
+  "deep-orange",
+  "brown",
+  "blue-grey",
+  "grey",
+  "black"
+];
+
+export interface ICookies {
+  host: string;
+  url: string;
+  cookies: chrome.cookies.Cookie[];
+}
+
+export interface IURL {
+  href: string;
+  protocol: string;
+  host: string;
+  port?: number;
+  query?: string;
+  params?: string[];
+  hash?: string;
+  path: string;
+  segments: string;
+  origin: string;
+}
+
+export interface IWorkingStatusItem {
+  key: string;
+  status?: EWorkingStatus;
+  title: string;
+}
+
+export interface ISearchResultSnapshot {
+  id: string;
+  key: string;
+  time: number;
+  searchPayload?: ISearchPayload;
+  result: SearchResultItem[];
+}
+
+export interface IBackupRawData {
+  options: any;
+  userData: any;
+  collection: any;
+  cookies?: any;
+  searchResultSnapshot?: any;
+  keepUploadTask?: any;
+}
+
+export interface IKeepUploadTask {
+  id: string;
+  time: number;
+  title: string;
+  downloadOptions: DownloadOptions;
+  items: any[];
 }

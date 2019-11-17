@@ -17,6 +17,10 @@ type Service = PTPlugin;
 export class User {
   private requestQueue: any = {};
   private requestQueueCount: number = 0;
+  private infoParserCache: Dictionary<any> = {};
+
+  // 用于脚本解析器调用
+  public InfoParser = InfoParser;
 
   constructor(public service: Service) {}
 
@@ -28,7 +32,7 @@ export class User {
     return new Promise<any>((resolve?: any, reject?: any) => {
       let requests: any[] = [];
       this.service.options.sites.forEach((site: Site) => {
-        if (!site.allowGetUserInfo) {
+        if (!site.allowGetUserInfo || site.offline) {
           return false;
         }
 
@@ -92,7 +96,7 @@ export class User {
         rejectFN(
           APP.createErrorMessage({
             status: EUserDataRequestStatus.notSupported,
-            msg: "暂不支持"
+            msg: this.service.i18n.t("service.user.notSupported") // "暂不支持"
           })
         );
 
@@ -122,7 +126,7 @@ export class User {
 
             rejectFN(
               APP.createErrorMessage({
-                msg: "未登录",
+                msg: this.service.i18n.t("service.user.notLogged"), //"未登录",
                 status: EUserDataRequestStatus.needLogin
               })
             );
@@ -168,7 +172,7 @@ export class User {
             rejectFN(
               APP.createErrorMessage({
                 status: EUserDataRequestStatus.unknown,
-                msg: "获取用户名和编号失败"
+                msg: this.service.i18n.t("service.user.getUserInfoFailed") //"获取用户名和编号失败"
               })
             );
           }
@@ -219,7 +223,7 @@ export class User {
             }
           }
 
-          requests.push(this.getInfos(host, url, rule, userInfo));
+          requests.push(this.getInfos(host, url, rule, site, userInfo));
         }
       });
       if (requests.length) {
@@ -251,6 +255,7 @@ export class User {
     host: string,
     url: string,
     rule: Dictionary<any>,
+    site?: Site,
     userInfo?: UserInfo
   ): Promise<any> {
     return new Promise<any>((resolve?: any, reject?: any) => {
@@ -258,18 +263,31 @@ export class User {
         .replace("://", "****")
         .replace(/\/\//g, "/")
         .replace("****", "://");
-      PPF.updateBadge(++this.requestQueueCount);
+
       let requestData = rule.requestData;
       if (requestData && userInfo) {
-        for (const key in requestData) {
-          if (requestData.hasOwnProperty(key)) {
-            const value = requestData[key];
-            requestData[key] = value
-              .replace("$user.id$", userInfo.id)
-              .replace("$user.name$", userInfo.name);
+        try {
+          for (const key in requestData) {
+            if (requestData.hasOwnProperty(key)) {
+              const value = requestData[key];
+              requestData[key] = PPF.replaceKeys(value, userInfo, "user");
+            }
           }
+        } catch (error) {
+          console.log(error);
         }
       }
+
+      /**
+       * 是否有脚本解析器
+       */
+      if (rule.parser && site) {
+        this.runParser(rule, site, userInfo, resolve, reject);
+        return;
+      }
+
+      PPF.updateBadge(++this.requestQueueCount);
+
       let request = $.ajax({
         url,
         method: rule.requestMethod || ERequestMethod.GET,
@@ -288,22 +306,20 @@ export class User {
             if (rule.dataType !== ERequestResultType.JSON) {
               let doc = new DOMParser().parseFromString(result, "text/html");
               // 构造 jQuery 对象
-              content = $(doc).find("body");
+              let topElement = rule.topElement || "body";
+              content = $(doc).find(topElement);
             } else {
               content = JSON.parse(result);
             }
           } catch (error) {
-            this.service.debug(error);
+            this.service.debug("getInfos.error", host, url, error);
             reject(error);
             return;
           }
 
           if (content && rule) {
             try {
-              let results = new InfoParser(this.service).getResult(
-                content,
-                rule
-              );
+              let results = new InfoParser().getResult(content, rule);
               resolve(results);
             } catch (error) {
               this.service.debug(error);
@@ -320,6 +336,58 @@ export class User {
 
       this.addQueue(host, url, request);
     });
+  }
+
+  /**
+   * 执行脚本解析器
+   * @param rule
+   * @param site
+   * @param userInfo
+   * @param resolve
+   * @param reject
+   */
+  public runParser(
+    rule: Dictionary<any>,
+    site: Site,
+    userInfo?: UserInfo,
+    resolve?: any,
+    reject?: any
+  ) {
+    let siteConfigPath = site.schema == "publicSite" ? "publicSites" : "sites";
+
+    if (site.path) {
+      siteConfigPath += `/${site.path}`;
+    } else {
+      siteConfigPath += `/${site.host}`;
+    }
+
+    let path = rule.parser;
+    // 判断是否为相对路径
+    if (path.substr(0, 1) !== "/" && path.substr(0, 4) !== "http") {
+      path = `${siteConfigPath}/${path}`;
+    }
+
+    // 传递给解析解析的参数
+    let _options = {
+      site,
+      rule,
+      userInfo,
+      resolve,
+      reject
+    };
+
+    // 当前对象
+    let _self = this;
+
+    let script = this.infoParserCache[path];
+    if (script) {
+      eval(script);
+    } else {
+      APP.getScriptContent(path).done(script => {
+        this.infoParserCache[path] = script;
+        eval(script);
+      });
+    }
   }
 
   public addQueue(host: string, url: string, request: any) {
@@ -362,7 +430,7 @@ export class User {
               this.service.logger.add({
                 module: EModule.background,
                 event: "user.abortGetUserInfo.error",
-                msg: "取消获取用户信息请求失败",
+                msg: this.service.i18n.t("service.user.abortGetUserInfoFailed"), //"取消获取用户信息请求失败",
                 data: {
                   site: site.host,
                   error

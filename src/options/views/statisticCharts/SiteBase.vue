@@ -3,7 +3,7 @@
     <v-autocomplete
       v-model="selectedSite"
       :items="sites"
-      :label="words.selectSite"
+      :label="$t('statistic.selectSite')"
       persistent-hint
       single-line
       item-text="name"
@@ -13,13 +13,13 @@
     >
       <template slot="selection" slot-scope="{ item }">
         <v-list-tile-avatar v-if="item.icon">
-          <img :src="item.icon">
+          <img :src="item.icon" />
         </v-list-tile-avatar>
         <span v-text="item.name"></span>
       </template>
       <template slot="item" slot-scope="data">
         <v-list-tile-avatar v-if="data.item.icon">
-          <img :src="data.item.icon">
+          <img :src="data.item.icon" />
         </v-list-tile-avatar>
         <v-list-tile-content>
           <v-list-tile-title v-html="data.item.name"></v-list-tile-title>
@@ -32,30 +32,28 @@
     </v-autocomplete>
 
     <v-layout row wrap>
-      <v-btn depressed small to="/home">{{ words.goback }}</v-btn>
-      <v-btn depressed small @click.stop="exportRawData">{{ words.exportRawData }}</v-btn>
+      <v-btn depressed small to="/home">{{ $t('statistic.goback') }}</v-btn>
+      <v-btn depressed small @click.stop="exportRawData">{{ $t('statistic.exportRawData') }}</v-btn>
       <v-spacer></v-spacer>
-      <v-btn flat icon small @click="share" :title="words.share" v-if="!shareing">
+      <v-btn flat icon small @click="share" :title="$t('statistic.share')" v-if="!shareing">
         <v-icon small>share</v-icon>
       </v-btn>
       <v-progress-circular indeterminate :width="3" size="30" color="green" v-if="shareing"></v-progress-circular>
     </v-layout>
 
     <div ref="charts">
-      <highcharts :options="chartBaseData"/>
-      <highcharts :options="chartExtData" class="mt-4"/>
+      <highcharts :options="chartBaseData" />
+      <highcharts :options="chartExtData" class="mt-4" />
 
       <v-card-actions>
         <v-spacer></v-spacer>
         <span>{{ shareTime | formatDate('YYYY-MM-DD HH:mm:ss') }}</span>
-        <span class="ml-1">Created By PT 助手 Plus {{ version }}</span>
+        <span class="ml-1">Created By {{ $t('app.name') }} {{ version }}</span>
       </v-card-actions>
     </div>
 
     <v-alert :value="true" type="info" color="grey">
-      注：
-      <br>1. 图表历史数据来自概览页，手动刷新或自动更新均会记录；
-      <br>2. 助手从 v1.0.1 版开始正式记录每次刷新的数据，每个站每天仅保存一条；
+      <div v-html="$t('statistic.note')"></div>
     </v-alert>
   </div>
 </template>
@@ -77,6 +75,8 @@ import {
 } from "@/interface/common";
 import html2canvas from "html2canvas";
 import FileSaver from "file-saver";
+import { PPF } from "@/service/public";
+import dayjs from "dayjs";
 
 const extension = new Extension();
 
@@ -125,12 +125,6 @@ export default Vue.extend({
   },
   data() {
     return {
-      words: {
-        selectSite: "选择需要统计的站点",
-        goback: "返回",
-        share: "生成分享图片",
-        exportRawData: "导出原数据"
-      },
       chartBaseData: {},
       chartExtData: {},
       host: "",
@@ -151,14 +145,11 @@ export default Vue.extend({
   },
 
   created() {
-    if (chrome && chrome.runtime) {
-      let manifest = chrome.runtime.getManifest();
-      this.version = "v" + (manifest.version_name || manifest.version);
-    }
+    this.version = PPF.getVersion();
 
     // 插入到第一个位置
     this.sites.push({
-      name: "<所有站点>",
+      name: this.$t("statistic.allSite").toString(),
       host: ECommonKey.allSite,
       icon: "",
       url: "",
@@ -203,7 +194,7 @@ export default Vue.extend({
 
       for (const host in source) {
         if (source.hasOwnProperty(host)) {
-          const siteData = source[host];
+          const siteData = this.fillData(source[host]);
           let site: Site = this.options.sites.find((item: Site) => {
             return item.host == host;
           });
@@ -237,25 +228,15 @@ export default Vue.extend({
                 };
               }
 
-              if (data.uploaded && data.uploaded > 0) {
-                item.uploaded += parseFloat(data.uploaded);
-              }
-
-              if (data.downloaded && data.downloaded > 0) {
-                item.downloaded += parseFloat(data.downloaded);
-              }
+              item.uploaded += this.getNumber(data.uploaded);
+              item.downloaded += this.getNumber(data.downloaded);
 
               if (data.seeding && data.seeding > 0) {
                 item.seeding += Math.round(data.seeding);
               }
 
-              if (data.seedingSize && data.seedingSize > 0) {
-                item.seedingSize += parseFloat(data.seedingSize);
-              }
-
-              if (data.bonus && data.bonus > 0) {
-                item.bonus += parseFloat(data.bonus);
-              }
+              item.seedingSize += this.getNumber(data.seedingSize);
+              item.bonus += this.getNumber(data.bonus);
 
               if (!userNames[data.name]) {
                 userNames[data.name] = 0;
@@ -287,14 +268,79 @@ export default Vue.extend({
 
       return datas;
     },
+    getNumber(source: any) {
+      if (typeof source === "string") {
+        source = source.replace(/,/g, "");
+      }
+
+      if (/^(-)?\d+(.\d+)?$/.test(source)) {
+        return parseFloat(source.toString());
+      }
+
+      return 0;
+    },
+    /**
+     * 填充数据，将两个日期中间空白的数据由前一天数据填充
+     */
+    fillData(result: any) {
+      let datas: any = {};
+      let lastDate: any = null;
+      let lastData: any = null;
+      for (const key in result) {
+        if (dayjs(key).isValid()) {
+          let data = result[key];
+          // 如果当前数据不可用，则使用上一条数据
+          if (!data.isLogged || data.lastUpdateStatus != "success") {
+            data = lastData;
+          } else if (lastData && data.id != lastData.id) {
+            data = lastData;
+          }
+
+          if (!data) {
+            continue;
+          }
+
+          let date = dayjs(key);
+
+          if (!lastDate) {
+            lastDate = date;
+          }
+
+          if (!lastData) {
+            lastData = PPF.clone(data);
+          }
+
+          let day = date.diff(lastDate, "day");
+          if (day > 1) {
+            for (let index = 0; index < day - 1; index++) {
+              lastDate = lastDate.add(1, "day");
+              datas[lastDate.format("YYYY-MM-DD")] = lastData;
+            }
+          }
+
+          datas[key] = data;
+
+          lastData = PPF.clone(data);
+          lastDate = date;
+        }
+      }
+
+      datas["latest"] = result["latest"];
+
+      return datas;
+    },
     resetData(result: any) {
       if (this.host) {
+        result = this.fillData(result);
         this.resetBaseData(result);
         this.resetExtData(result);
       } else {
         let data = this.getTotalData(result);
         console.log(data);
-        this.selectedSite = { name: "<所有站点>", host: ECommonKey.allSite };
+        this.selectedSite = {
+          name: this.$t("statistic.allSite").toString(),
+          host: ECommonKey.allSite
+        };
         this.resetBaseData(data);
         this.resetExtData(data);
       }
@@ -307,7 +353,7 @@ export default Vue.extend({
       var datas = [
         {
           type: "spline",
-          name: "上传",
+          name: this.$t("statistic.upload").toString(),
           tooltip: {
             formatter: function(): any {
               let _this = this as any;
@@ -319,7 +365,7 @@ export default Vue.extend({
         },
         {
           type: "spline",
-          name: "下载",
+          name: this.$t("statistic.download").toString(),
           tooltip: {
             valueSuffix: " "
           },
@@ -328,7 +374,7 @@ export default Vue.extend({
         },
         {
           type: "spline",
-          name: "积分",
+          name: this.$t("statistic.bonus").toString(),
           yAxis: 1,
           tooltip: {
             valueSuffix: " "
@@ -347,6 +393,8 @@ export default Vue.extend({
         name: ""
       };
 
+      let _self = this;
+
       // 数据
       for (const date in result) {
         if (result.hasOwnProperty(date)) {
@@ -360,9 +408,11 @@ export default Vue.extend({
             continue;
           }
 
-          datas[0].data.push(parseFloat(data.uploaded));
-          datas[1].data.push(parseFloat(data.downloaded));
-          datas[2].data.push(parseFloat(data.bonus));
+          const time = new Date(date).getTime();
+
+          datas[0].data.push([time, this.getNumber(data.uploaded)]);
+          datas[1].data.push([time, this.getNumber(data.downloaded)]);
+          datas[2].data.push([time, this.getNumber(data.bonus)]);
           categories.push(date);
         }
       }
@@ -375,19 +425,27 @@ export default Vue.extend({
           enabled: false
         },
         subtitle: {
-          text: `上传：${filters.formatSize(
-            latest.uploaded
-          )}, 下载：${filters.formatSize(
-            latest.downloaded
-          )}，积分：${filters.formatNumber(latest.bonus)}`
+          text: this.$t("statistic.baseDataSubTitle", {
+            uploaded: filters.formatSize(latest.uploaded),
+            downloaded: filters.formatSize(latest.downloaded),
+            bonus: filters.formatNumber(latest.bonus)
+          }).toString()
         },
         title: {
-          text: `[${latest.name || this.userName}@${
-            this.selectedSite.name
-          }] 基本数据`
+          text: this.$t("statistic.baseDataTitle", {
+            userName: latest.name || this.userName,
+            site: this.selectedSite.name
+          }).toString()
         },
         xAxis: {
-          categories: categories,
+          type: "datetime",
+          dateTimeLabelFormats: {
+            day: "%Y-%m-%d",
+            week: "%Y-%m-%d",
+            month: "%Y-%m-%d",
+            year: "%Y-%m-%d"
+          },
+          // categories: categories,
           gridLineDashStyle: "ShortDash",
           gridLineWidth: 1,
           gridLineColor: "#dddddd"
@@ -404,7 +462,7 @@ export default Vue.extend({
               }
             },
             title: {
-              text: "数据",
+              text: this.$t("statistic.data").toString(),
               style: {
                 color: colors[3]
               }
@@ -424,7 +482,7 @@ export default Vue.extend({
               }
             },
             title: {
-              text: "积分",
+              text: this.$t("statistic.bonus").toString(),
               style: {
                 color: colors[2]
               }
@@ -435,6 +493,11 @@ export default Vue.extend({
         ],
         tooltip: {
           shared: true,
+          crosshairs: {
+            width: 1,
+            color: "red",
+            dashStyle: "shortdot"
+          },
           useHTML: true,
           formatter: function(): any {
             function createTipItem(text: string, color: string = "#000") {
@@ -442,16 +505,17 @@ export default Vue.extend({
             }
             let _this = this as any;
             let tips: string[] = [];
-            tips.push(createTipItem(_this.x));
+            // 标题（时间）
+            tips.push(createTipItem(dayjs(_this.x).format("YYYY-MM-DD")));
             _this.points.forEach((point: any) => {
               let value = point.y;
               switch (point.series.name) {
-                case "上传":
-                case "下载":
+                case _self.$t("statistic.upload").toString():
+                case _self.$t("statistic.download").toString():
                   value = filters.formatSize(point.y);
                   break;
 
-                case "积分":
+                case _self.$t("statistic.bonus").toString():
                   value = filters.formatNumber(point.y);
                   break;
               }
@@ -462,7 +526,6 @@ export default Vue.extend({
             });
 
             let result = `<div>${tips.join("")}</div>`;
-            console.log(result);
             return result;
           }
         }
@@ -478,13 +541,13 @@ export default Vue.extend({
       var datas = [
         {
           type: "spline",
-          name: "做种体积",
+          name: this.$t("statistic.seedingSize").toString(),
           fillOpacity: fillOpacity,
           data: [] as any
         },
         {
           type: "spline",
-          name: "做种数",
+          name: this.$t("statistic.seedingCount").toString(), //"做种数",
           yAxis: 1,
           fillOpacity: fillOpacity,
           data: [] as any
@@ -515,12 +578,15 @@ export default Vue.extend({
             continue;
           }
 
-          datas[0].data.push(parseFloat(data.seedingSize));
-          datas[1].data.push(parseFloat(data.seeding));
+          const time = new Date(date).getTime();
+
+          datas[0].data.push([time, parseFloat(data.seedingSize)]);
+          datas[1].data.push([time, parseFloat(data.seeding)]);
           categories.push(date);
         }
       }
 
+      let _self = this;
       var chart = {
         series: datas,
         colors: colors,
@@ -529,17 +595,26 @@ export default Vue.extend({
           enabled: false
         },
         subtitle: {
-          text: `做种体积：${filters.formatSize(latest.seedingSize)}, 数量：${
-            latest.seeding
-          } 个`
+          text: this.$t("statistic.seedingDataSubTitle", {
+            seedingSize: filters.formatSize(latest.seedingSize),
+            count: latest.seeding
+          }).toString()
         },
         title: {
-          text: `[${latest.name || this.userName}@${
-            this.selectedSite.name
-          }] 保种情况`
+          text: this.$t("statistic.seedingDataTitle", {
+            userName: latest.name || this.userName,
+            site: this.selectedSite.name
+          }).toString()
         },
         xAxis: {
-          categories: categories,
+          // categories: categories,
+          type: "datetime",
+          dateTimeLabelFormats: {
+            day: "%Y-%m-%d",
+            week: "%Y-%m-%d",
+            month: "%Y-%m-%d",
+            year: "%Y-%m-%d"
+          },
           gridLineDashStyle: "ShortDash",
           gridLineWidth: 1,
           gridLineColor: "#dddddd"
@@ -556,7 +631,7 @@ export default Vue.extend({
               }
             },
             title: {
-              text: "体积",
+              text: this.$t("statistic.size").toString(), //"体积",
               style: {
                 color: colors[0]
               }
@@ -576,7 +651,7 @@ export default Vue.extend({
               }
             },
             title: {
-              text: "数量",
+              text: this.$t("statistic.count").toString(), //"数量",
               style: {
                 color: colors[1]
               }
@@ -588,17 +663,24 @@ export default Vue.extend({
         tooltip: {
           shared: true,
           useHTML: true,
+          crosshairs: {
+            width: 1,
+            color: "red",
+            dashStyle: "shortdot"
+          },
           formatter: function(): any {
             function createTipItem(text: string, color: string = "#000") {
               return `<div style='color:${color};'>${text}</div>`;
             }
             let _this = this as any;
             let tips: string[] = [];
-            tips.push(createTipItem(_this.x));
+            // 标题（时间）
+            tips.push(createTipItem(dayjs(_this.x).format("YYYY-MM-DD")));
             _this.points.forEach((point: any) => {
               let value = point.y;
               switch (point.series.name) {
-                case "做种体积":
+                // "做种体积"
+                case _self.$t("statistic.seedingSize").toString():
                   value = filters.formatSize(point.y);
                   break;
               }
@@ -609,7 +691,6 @@ export default Vue.extend({
             });
 
             let result = `<div>${tips.join("")}</div>`;
-            console.log(result);
             return result;
           }
         }

@@ -1,18 +1,40 @@
 <template>
   <div>
-    <v-snackbar v-model="valid" top :timeout="3000" color="error">{{ words.validMsg }}</v-snackbar>
+    <v-snackbar
+      v-model="valid"
+      top
+      :timeout="3000"
+      color="error"
+    >{{ $t('settings.downloadClients.add.validMsg') }}</v-snackbar>
     <v-dialog v-model="show" max-width="800">
       <v-card>
-        <v-card-title class="headline blue-grey darken-2" style="color:white">{{ words.title }}</v-card-title>
+        <v-toolbar dark color="blue-grey darken-2">
+          <v-toolbar-title>{{ $t('settings.downloadClients.add.title') }}</v-toolbar-title>
+          <v-spacer></v-spacer>
+          <v-btn
+            icon
+            flat
+            color="success"
+            href="https://github.com/ronggang/PT-Plugin-Plus/wiki/config-download-client"
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            :title="$t('common.help')"
+          >
+            <v-icon>help</v-icon>
+          </v-btn>
+        </v-toolbar>
 
         <v-card-text>
           <v-stepper v-model="step">
             <v-stepper-header>
-              <v-stepper-step :complete="step > 1" step="1">{{ words.titleStep1 }}</v-stepper-step>
+              <v-stepper-step
+                :complete="step > 1"
+                step="1"
+              >{{ $t('settings.downloadClients.add.titleStep1') }}</v-stepper-step>
 
               <v-divider></v-divider>
 
-              <v-stepper-step step="2">{{ words.titleStep2 }}</v-stepper-step>
+              <v-stepper-step step="2">{{ $t('settings.downloadClients.add.titleStep2') }}</v-stepper-step>
             </v-stepper-header>
 
             <v-stepper-items>
@@ -21,7 +43,7 @@
                 <v-autocomplete
                   v-model="selectedItem"
                   :items="items"
-                  :label="words.validMsg"
+                  :label="$t('settings.downloadClients.add.validMsg')"
                   :menu-props="{maxHeight:'auto'}"
                   :hint="selectedItem.description"
                   persistent-hint
@@ -32,13 +54,13 @@
                 >
                   <template slot="selection" slot-scope="{ item }">
                     <v-list-tile-avatar>
-                      <img :src="item.icon">
+                      <img :src="item.icon" />
                     </v-list-tile-avatar>
                     <span v-text="item.name"></span>
                   </template>
                   <template slot="item" slot-scope="data" style>
                     <v-list-tile-avatar>
-                      <img :src="data.item.icon">
+                      <img :src="data.item.icon" />
                     </v-list-tile-avatar>
                     <v-list-tile-content>
                       <v-list-tile-title v-html="data.item.name"></v-list-tile-title>
@@ -52,7 +74,7 @@
 
               <!-- 站点配置 -->
               <v-stepper-content step="2">
-                <Editor :option="selectedData"/>
+                <Editor :option="selectedData" />
               </v-stepper-content>
             </v-stepper-items>
           </v-stepper>
@@ -70,19 +92,19 @@
             rel="noopener noreferrer nofollow"
           >
             <v-icon>help</v-icon>
-            <span class="ml-1">{{ words.helpMsg }}</span>
+            <span class="ml-1">{{ $t('settings.downloadClients.add.helpMsg') }}</span>
           </v-btn>
           <v-spacer></v-spacer>
           <v-btn flat color="error" @click="cancel">
             <v-icon>cancel</v-icon>
-            <span class="ml-1">{{ words.cancel }}</span>
+            <span class="ml-1">{{ $t('settings.downloadClients.add.cancel') }}</span>
           </v-btn>
           <v-btn flat color="grey darken-1" @click="step--" :disabled="step===1">
             <v-icon>navigate_before</v-icon>
-            <span>{{ words.prevStep }}</span>
+            <span>{{ $t('settings.downloadClients.add.prevStep') }}</span>
           </v-btn>
           <v-btn flat color="blue" @click="next(step)" v-show="step<stepCount">
-            <span>{{ words.nextStep }}</span>
+            <span>{{ $t('settings.downloadClients.add.nextStep') }}</span>
             <v-icon>navigate_next</v-icon>
           </v-btn>
           <v-btn
@@ -109,16 +131,6 @@ export default Vue.extend({
   },
   data() {
     return {
-      words: {
-        title: "新增下载服务器",
-        titleStep1: "选择服务器类型",
-        titleStep2: "详细配置",
-        validMsg: "请选择一个服务器类型",
-        helpMsg: "找不到想要的服务器类型？来这里添加吧！",
-        nextStep: "下一步",
-        prevStep: "上一步",
-        cancel: "取消"
-      },
       step: 1,
       show: false,
       stepCount: 2,

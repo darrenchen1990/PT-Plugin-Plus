@@ -17,12 +17,18 @@ import { ContextMenus } from "./contextMenus";
 import { UserData } from "./userData";
 import { PPF } from "@/service/public";
 import { OmniBox } from "./omnibox";
+import { i18nService } from "./i18n";
+import DownloadQuene from "./downloadQuene";
+import Collection from "./collection";
+import SearchResultSnapshot from "./searchResultSnapshot";
+import KeepUploadTask from "./keepUploadTask";
+
 /**
  * PT 助手后台服务类
  */
 export default class PTPlugin {
   // 当前配置对象
-  public config: Config = new Config();
+  public config: Config = new Config(this);
   public options: Options = {
     sites: [],
     clients: []
@@ -38,6 +44,15 @@ export default class PTPlugin {
   // 用户数据处理
   public userData: UserData = new UserData(this);
   public omniBox: OmniBox = new OmniBox(this);
+  public i18n: i18nService = new i18nService(this);
+  // 种子下载队列服务
+  public downloadQuene: DownloadQuene = new DownloadQuene(this);
+  // 收藏
+  public collection: Collection = new Collection();
+  // 搜索结果快照
+  public searchResultSnapshot: SearchResultSnapshot = new SearchResultSnapshot();
+  // 辅种任务
+  public keepUploadTask: KeepUploadTask = new KeepUploadTask();
 
   private reloadCount: number = 0;
   private autoRefreshUserDataTimer: number = 0;
@@ -66,23 +81,31 @@ export default class PTPlugin {
     console.log("requestMessage", request.action);
     return new Promise<any>((resolve?: any, reject?: any) => {
       let result: any;
-      if (
-        ![
-          EAction.getSystemLogs,
-          EAction.writeLog,
-          EAction.readConfig,
-          EAction.saveConfig,
-          EAction.saveUIOptions,
-          EAction.openOptions,
-          EAction.getClearedOptions,
-          EAction.getBase64FromImageUrl
-        ].includes(request.action)
-      ) {
-        this.logger.add({
-          module: EModule.background,
-          event: `${ELogEvent.requestMessage}.${request.action}`
-        });
-      }
+      // if (
+      //   ![
+      //     EAction.getSystemLogs,
+      //     EAction.writeLog,
+      //     EAction.readConfig,
+      //     EAction.saveConfig,
+      //     EAction.saveUIOptions,
+      //     EAction.openOptions,
+      //     EAction.getClearedOptions,
+      //     EAction.getBase64FromImageUrl,
+      //     EAction.changeLanguage,
+      //     EAction.addLanguage,
+      //     EAction.getCurrentLanguageResource,
+      //     EAction.replaceLanguage,
+      //     EAction.readUIOptions,
+      //     EAction.addContentPage,
+      //     EAction.getDownloadHistory,
+      //     EAction.getTorrentDataFromURL
+      //   ].includes(request.action)
+      // ) {
+      //   this.logger.add({
+      //     module: EModule.background,
+      //     event: `${ELogEvent.requestMessage}.${request.action}`
+      //   });
+      // }
 
       try {
         switch (request.action) {
@@ -100,12 +123,20 @@ export default class PTPlugin {
 
           // 保存参数
           case EAction.saveConfig:
+            if (
+              request.data.locale &&
+              request.data.locale != this.options.locale
+            ) {
+              this.i18n.reset(request.data.locale);
+            }
             this.config.save(request.data);
             this.options = request.data;
             if (this.controller.isInitialized) {
               this.controller.reset(this.options);
             }
-            this.contentMenus.init(this.options);
+            setTimeout(() => {
+              this.contentMenus.init(this.options);
+            }, 100);
             this.resetAutoRefreshUserDataTimer();
             resolve(this.options);
             break;
@@ -161,7 +192,9 @@ export default class PTPlugin {
                 this.logger.add({
                   module: EModule.background,
                   event: `${EAction.testClientConnectivity}`,
-                  msg: `测试客户连接失败[${request.data.address}]`,
+                  msg: this.i18n.t("service.testClientConnectivityFailed", {
+                    address: request.data.address
+                  }), // `测试客户连接失败[${request.data.address}]`,
                   data: result
                 });
                 reject(result);
@@ -228,6 +261,10 @@ export default class PTPlugin {
               });
             break;
 
+          case EAction.changeLanguage:
+            return this.i18n.reset(request.data);
+            break;
+
           // 如果没有特殊的情况默认使用处理器来处理
           default:
             if ((this as any)[request.action]) {
@@ -273,8 +310,22 @@ export default class PTPlugin {
     }
 
     this.readConfig().then(() => {
-      this.init();
+      this.initI18n();
     });
+  }
+
+  /**
+   * 初始化多语言环境
+   */
+  private initI18n() {
+    this.i18n
+      .init()
+      .then(() => {
+        this.init();
+      })
+      .catch(() => {
+        console.debug("i18n init error");
+      });
   }
 
   /**
@@ -345,7 +396,7 @@ export default class PTPlugin {
     let failedRetryInterval =
       this.options.autoRefreshUserDataFailedRetryInterval || 5;
 
-    this.autoRefreshUserDataTimer = setInterval(() => {
+    this.autoRefreshUserDataTimer = window.setInterval(() => {
       let time = new Date().getTime();
 
       if (
@@ -409,9 +460,7 @@ export default class PTPlugin {
   private getNextTime(addDays: number = 1) {
     let today = PPF.getToDay();
     let time = new Date(
-      `${today} ${this.options.autoRefreshUserDataHours}:${
-        this.options.autoRefreshUserDataMinutes
-      }:00`
+      `${today} ${this.options.autoRefreshUserDataHours}:${this.options.autoRefreshUserDataMinutes}:00`
     );
 
     return new Date(time.setDate(time.getDate() + addDays)).getTime();
@@ -461,10 +510,16 @@ export default class PTPlugin {
         (message: any, sender: chrome.runtime.MessageSender, callback) => {
           this.requestMessage(message, sender)
             .then((result: any) => {
-              callback && callback(result);
+              callback &&
+                callback({
+                  resolve: result
+                });
             })
             .catch((result: any) => {
-              callback && callback(result);
+              callback &&
+                callback({
+                  reject: result
+                });
             });
           // 这句不能去掉
           return true;
@@ -571,7 +626,7 @@ export default class PTPlugin {
    * @param source
    */
   public clone(source: any) {
-    return JSON.parse(JSON.stringify(source));
+    return PPF.clone(source);
   }
 
   /**
@@ -579,23 +634,7 @@ export default class PTPlugin {
    * @param permissions 需要检查的权限列表
    */
   public checkPermissions(permissions: string[]): Promise<any> {
-    return new Promise<any>((resolve?: any, reject?: any) => {
-      // 查询当前权限
-      chrome.permissions.contains(
-        {
-          permissions: permissions
-        },
-        result => {
-          if (result === true) {
-            resolve(true);
-          } else {
-            reject({
-              success: false
-            });
-          }
-        }
-      );
-    });
+    return PPF.checkPermissions(permissions);
   }
 
   /**
@@ -603,21 +642,6 @@ export default class PTPlugin {
    * @param permissions 需要申请的权限列表
    */
   public requestPermissions(permissions: string[]): Promise<any> {
-    return new Promise<any>((resolve?: any, reject?: any) => {
-      chrome.permissions.request(
-        {
-          permissions: permissions
-        },
-        granted => {
-          if (granted === true) {
-            resolve(true);
-          } else {
-            reject({
-              success: false
-            });
-          }
-        }
-      );
-    });
+    return PPF.requestPermissions(permissions);
   }
 }

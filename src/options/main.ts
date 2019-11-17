@@ -1,12 +1,15 @@
 import Vue from "vue";
-import "./plugins/vuetify";
+import vuetifyService from "./plugins/vuetify";
 import App from "./App.vue";
 import router from "./router";
 import store from "./store";
 import { filters } from "@/service/filters";
 import dayjs from "dayjs";
+import { i18nService } from "./i18n";
+import { Options, i18nResource } from "@/interface/common";
 
 (function main() {
+  let options: Options;
   Vue.config.productionTip = false;
 
   // 初始化全局过滤器
@@ -24,6 +27,10 @@ import dayjs from "dayjs";
       return "";
     }
     if (dayjs(val).isValid()) {
+      // 标准时间戳需要 * 1000
+      if (/^(\d){10}$/.test(val)) {
+        val = parseInt(val) * 1000;
+      }
       return dayjs(val).format(format);
     }
     return val;
@@ -100,16 +107,73 @@ import dayjs from "dayjs";
     return result + "前";
   });
 
-  // 读取配置信息
-  store.dispatch("readConfig");
-  store.dispatch("readUIOptions");
+  let vm: any;
 
-  // 延时加载界面
-  setTimeout(() => {
-    new Vue({
-      router,
-      store,
-      render: h => h(App)
-    }).$mount("#app");
-  }, 100);
+  // 读取配置信息
+  store
+    .dispatch("readConfig")
+    .then((result: Options) => {
+      let i18n = new i18nService();
+
+      i18n.onChanged = (locale: string) => {
+        options.locale = locale;
+        store.dispatch("saveConfig", {
+          locale
+        });
+        if (!vm) {
+          return;
+        }
+
+        // 非简体中文时，暂时切换到英文
+        // TODO 考虑添加其他语言动态支持
+        if (locale != "zh-CN") {
+          vm.$vuetify.lang.current = "en";
+        } else {
+          vm.$vuetify.lang.current = "zh-Hans";
+        }
+      };
+
+      i18n.onAdded = (resource: i18nResource) => {
+        store.dispatch("addLanguage", resource);
+      };
+
+      i18n.onReplaced = (resource: i18nResource) => {
+        store.dispatch("replaceLanguage", resource);
+      };
+
+      options = result;
+
+      if (options.locale != "zh-CN") {
+        vuetifyService.init("en");
+      } else {
+        vuetifyService.init("zh-Hans");
+      }
+
+      // 设置语言信息
+      i18n.init(options.locale || "zh-CN").then((i18n: any) => {
+        vm = new Vue({
+          router,
+          store,
+          i18n,
+          render: h => h(App)
+        });
+        vm.$mount("#app");
+      });
+
+      // 全局挂载 i18nService 对象
+      window.i18nService = i18n;
+    })
+    .catch(error => {
+      alert("加载配置失败？？" + error);
+    });
+  store.dispatch("readUIOptions");
 })();
+
+/**
+ * 定义 window 中需要挂载的对象
+ */
+declare global {
+  interface Window {
+    i18nService: i18nService;
+  }
+}

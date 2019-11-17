@@ -6,6 +6,9 @@
   "tags": ["音乐", "日韩"],
   "schema": "Gazelle",
   "host": "jpopsuki.eu",
+  "searchEntryConfig": {
+    "skipIMDbId": true
+  },
   "searchEntry": [{
     "entry": "/torrents.php?searchstr=$key$&searchsubmit=1",
     "name": "all",
@@ -59,8 +62,16 @@
         },
         "seedingSize": {
           "value": -1
+        },
+        "messageCount": {
+          "selector": ["#alerts > .alertbar > a[href='notice.php']", "div.alertbar > a[href*='inbox.php']"],
+          "filters": ["query.text().match(/(\\d+)/)", "(query && query.length>=2)?parseInt(query[1]):0"]
         }
       }
     }
+  },
+  "supportedFeatures": {
+    "imdbSearch": false,
+    "userData": "◐"
   }
 }

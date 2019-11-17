@@ -1,16 +1,16 @@
 <template>
   <div class="history">
-    <v-alert :value="true" type="info">{{ words.title }}</v-alert>
+    <v-alert :value="true" type="info">{{ $t("history.title") }}</v-alert>
     <v-card>
       <v-card-title>
         <v-btn color="error" :disabled="selected.length==0">
           <v-icon class="mr-2">remove</v-icon>
-          {{ words.remove }}
+          {{ $t("history.remove") }}
         </v-btn>
 
         <v-btn color="error" @click="clear" :disabled="items.length==0">
           <v-icon class="mr-2">clear</v-icon>
-          {{ words.clear }}
+          {{ $t("history.clear") }}
         </v-btn>
         <v-spacer></v-spacer>
 
@@ -34,9 +34,9 @@
           <td style="text-align: center;">
             <div v-if="!!props.item.site">
               <v-avatar size="18">
-                <img :src="props.item.site.icon">
+                <img :src="props.item.site.icon" />
               </v-avatar>
-              <br>
+              <br />
               <span class="captionText">{{ props.item.site.name }}</span>
             </div>
           </td>
@@ -48,25 +48,51 @@
               :title="props.item.data.title"
               rel="noopener noreferrer nofollow"
             >{{ props.item.data.title || props.item.data.link}}</a>
-            <span v-else :title="props.item.data.url">{{ props.item.data.title || words.unknown }}</span>
-            <br>
+            <span
+              v-else
+              :title="props.item.data.url"
+            >{{ props.item.data.title || props.item.data.url }}</span>
+            <br />
             <span
               class="sub-title"
-            >[ {{ getClientName(props.item.data.clientId||props.item.clientId) }} ] -> {{ props.item.data.savePath || words.defaultPath }}</span>
+            >[ {{ getClientName(props.item.data.clientId||props.item.clientId) }} ] -> {{ props.item.data.savePath || $t("history.defaultPath") }}</span>
           </td>
           <td>
-            <v-icon v-if="props.item.success===false" color="error" :title="words.fail">close</v-icon>
-            <v-icon v-else color="success" :title="words.success">done</v-icon>
+            <v-icon
+              v-if="props.item.success===false"
+              color="error"
+              :title="$t('history.fail')"
+            >close</v-icon>
+            <v-icon v-else color="success" :title="$t('history.success')">done</v-icon>
           </td>
           <td>{{ props.item.time | formatDate }}</td>
           <td>
-            <v-icon
+            <!-- 重新下载 -->
+            <v-btn icon flat small @click="download(props.item)" :title="$t('history.download')">
+              <v-icon small>save_alt</v-icon>
+            </v-btn>
+
+            <!-- 下载到 -->
+            <DownloadTo
+              :downloadOptions="{host: props.item.host, url: props.item.data.url}"
+              flat
+              icon
               small
-              class="mr-2"
-              @click="download(props.item)"
-              :title="words.download"
-            >cloud_download</v-icon>
-            <v-icon small color="error" @click="removeConfirm(props.item)">delete</v-icon>
+              class="mx-0"
+              @error="onError"
+              @success="onSuccess"
+            />
+
+            <v-btn
+              icon
+              flat
+              small
+              color="error"
+              @click="removeConfirm(props.item)"
+              :title="$t('common.remove')"
+            >
+              <v-icon small>delete</v-icon>
+            </v-btn>
           </td>
         </template>
       </v-data-table>
@@ -75,9 +101,9 @@
     <!-- 删除确认 -->
     <v-dialog v-model="dialogRemoveConfirm" width="300">
       <v-card>
-        <v-card-title class="headline red lighten-2">{{ words.removeConfirmTitle }}</v-card-title>
+        <v-card-title class="headline red lighten-2">{{ $t('history.removeConfirmTitle') }}</v-card-title>
 
-        <v-card-text>{{ words.removeConfirm }}</v-card-text>
+        <v-card-text>{{ $t('history.removeConfirm') }}</v-card-text>
 
         <v-divider></v-divider>
 
@@ -85,11 +111,11 @@
           <v-spacer></v-spacer>
           <v-btn flat color="info" @click="dialogRemoveConfirm=false">
             <v-icon>cancel</v-icon>
-            <span class="ml-1">{{ words.cancel }}</span>
+            <span class="ml-1">{{ $t('history.cancel') }}</span>
           </v-btn>
           <v-btn color="error" flat @click="remove">
             <v-icon>check_circle_outline</v-icon>
-            <span class="ml-1">{{ words.ok }}</span>
+            <span class="ml-1">{{ $t('history.ok') }}</span>
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -103,26 +129,15 @@
 import Vue from "vue";
 import { EAction, DownloadOptions, Site, Dictionary } from "@/interface/common";
 import Extension from "@/service/extension";
+import DownloadTo from "@/options/components/DownloadTo.vue";
 
 const extension = new Extension();
 export default Vue.extend({
+  components: {
+    DownloadTo
+  },
   data() {
     return {
-      words: {
-        title: "下载历史",
-        remove: "删除",
-        clear: "清除",
-        removeConfirm: "确认要删除这条记录吗？",
-        removeConfirmTitle: "删除确认",
-        clearConfirm: "确认要删除所有下载记录吗？",
-        ok: "确认",
-        cancel: "取消",
-        download: "重新下载",
-        fail: "失败",
-        success: "成功",
-        unknown: "N/A",
-        defaultPath: "默认目录"
-      },
       selected: [],
       selectedItem: {} as any,
       pagination: {
@@ -130,13 +145,6 @@ export default Vue.extend({
         sortBy: "time",
         descending: true
       },
-      headers: [
-        { text: "来源", align: "center", value: "data.host", width: "140px" },
-        { text: "标题", align: "left", value: "data.title" },
-        { text: "状态", align: "left", value: "data.success" },
-        { text: "下载时间", align: "left", value: "time" },
-        { text: "操作", value: "name", sortable: false }
-      ],
       items: [] as any[],
       dialogRemoveConfirm: false,
       options: this.$store.state.options,
@@ -150,7 +158,7 @@ export default Vue.extend({
 
   methods: {
     clear() {
-      if (confirm(this.words.clearConfirm)) {
+      if (confirm(this.$t("history.clearConfirm").toString())) {
         extension
           .sendRequest(EAction.clearDownloadHistory)
           .then((result: any) => {
@@ -206,7 +214,7 @@ export default Vue.extend({
       console.log(options);
 
       this.haveSuccess = true;
-      this.successMsg = "正在发送种子到下载服务器……";
+      this.successMsg = this.$t("history.seedingTorrent").toString();
 
       let data = Object.assign({}, options.data);
       if (!data.clientId) {
@@ -226,11 +234,48 @@ export default Vue.extend({
             this.errorMsg = result.msg;
           }
         });
+    },
+
+    onError(msg: string) {
+      this.errorMsg = msg;
+    },
+
+    onSuccess(msg: string) {
+      this.successMsg = msg;
     }
   },
 
   created() {
     this.getDownloadHistory();
+  },
+
+  computed: {
+    headers(): Array<any> {
+      return [
+        {
+          text: this.$t("history.headers.site"),
+          align: "center",
+          value: "data.host",
+          width: "140px"
+        },
+        {
+          text: this.$t("history.headers.title"),
+          align: "left",
+          value: "data.title"
+        },
+        {
+          text: this.$t("history.headers.status"),
+          align: "left",
+          value: "data.success"
+        },
+        { text: this.$t("history.headers.time"), align: "left", value: "time" },
+        {
+          text: this.$t("history.headers.action"),
+          value: "name",
+          sortable: false
+        }
+      ];
+    }
   }
 });
 </script>

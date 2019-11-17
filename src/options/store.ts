@@ -10,7 +10,8 @@ import {
   EModule,
   SearchSolution,
   SearchEntry,
-  ECommonKey
+  ECommonKey,
+  IBackupServer
 } from "@/interface/common";
 import Extension from "@/service/extension";
 
@@ -296,43 +297,50 @@ export default new Vuex.Store({
         });
     },
 
-    readConfig({ commit, state }) {
-      extension.sendRequest(EAction.writeLog, null, {
-        module: EModule.options,
-        event: "Options.readConfig",
-        msg: "开始加载配置信息"
-      });
-      extension
-        .sendRequest(EAction.readConfig)
-        .then((options: Options) => {
-          commit("updateOptions", options);
-          if (!options.system) {
+    readConfig({ commit, state }): Promise<any> {
+      return new Promise<any>((resolve?: any, reject?: any) => {
+        extension.sendRequest(EAction.writeLog, null, {
+          module: EModule.options,
+          event: "Options.readConfig",
+          msg: "开始加载配置信息"
+        });
+        extension
+          .sendRequest(EAction.readConfig)
+          .then((options: Options) => {
+            commit("updateOptions", options);
+            if (!options.system) {
+              extension.sendRequest(EAction.writeLog, null, {
+                module: EModule.options,
+                event: "Options.readConfig.Error",
+                msg: "配置信息加载失败，没有获取到系统定义信息"
+              });
+              reject("Options.readConfig.Error");
+              return;
+            }
+
+            if (!options.system.clients || !options.system.schemas) {
+              extension.sendRequest(EAction.writeLog, null, {
+                module: EModule.options,
+                event: "Options.readConfig.Error",
+                msg: "配置信息加载失败，没有获取到下载服务器或站点架构信息"
+              });
+              reject("Options.readConfig.Error");
+              return;
+            }
+
             extension.sendRequest(EAction.writeLog, null, {
               module: EModule.options,
-              event: "Options.readConfig.Error",
-              msg: "配置信息加载失败，没有获取到系统定义信息"
+              event: "Options.readConfig.Finished",
+              msg: "配置加载完成"
             });
-            return;
-          }
 
-          if (!options.system.clients || !options.system.schemas) {
-            extension.sendRequest(EAction.writeLog, null, {
-              module: EModule.options,
-              event: "Options.readConfig.Error",
-              msg: "配置信息加载失败，没有获取到下载服务器或站点架构信息"
-            });
-            return;
-          }
-
-          extension.sendRequest(EAction.writeLog, null, {
-            module: EModule.options,
-            event: "Options.readConfig.Finished",
-            msg: "配置加载完成"
+            state.initialized = true;
+            resolve(options);
+          })
+          .catch(e => {
+            reject(e);
           });
-
-          state.initialized = true;
-        })
-        .catch();
+      });
     },
 
     saveConfig({ commit, state }, options: Options) {
@@ -535,6 +543,83 @@ export default new Vuex.Store({
           extension.save(_options);
         }
       }
+    },
+
+    addLanguage({ commit, state }, options) {
+      extension
+        .sendRequest(EAction.addLanguage, null, options)
+        .then(() => {})
+        .catch(error => {});
+    },
+
+    replaceLanguage({ commit, state }, options) {
+      extension
+        .sendRequest(EAction.replaceLanguage, null, options)
+        .then(() => {})
+        .catch(error => {});
+    },
+
+    /**
+     * 添加备份服务器
+     * @param param0
+     * @param server
+     */
+    addBackupServer({ commit, state }, server: IBackupServer) {
+      let _options: Options = Object.assign({}, state.options);
+
+      if (!_options.backupServers) {
+        _options.backupServers = [];
+      }
+
+      server.id = md5(new Date().toString());
+      _options.backupServers.push(server);
+
+      commit("updateOptions", _options);
+      extension.save(_options);
+    },
+
+    /**
+     * 更新备份服务器
+     * @param param0
+     * @param newData
+     */
+    updateBackupServer({ commit, state }, newData: IBackupServer) {
+      let _options: Options = Object.assign({}, state.options);
+
+      if (_options.backupServers) {
+        let index = _options.backupServers.findIndex((item: IBackupServer) => {
+          return item.id === newData.id;
+        });
+
+        if (index !== -1) {
+          _options.backupServers[index] = newData;
+
+          commit("updateOptions", _options);
+          extension.save(_options);
+        }
+      }
+    },
+
+    /**
+     * 删除备份服务器
+     * @param param0
+     * @param newData
+     */
+    removeBackupServer({ commit, state }, newData: IBackupServer) {
+      let _options: Options = Object.assign({}, state.options);
+
+      if (_options.backupServers) {
+        let index = _options.backupServers.findIndex((item: IBackupServer) => {
+          return item.id === newData.id;
+        });
+
+        if (index !== -1) {
+          _options.backupServers.splice(index, 1);
+
+          commit("updateOptions", _options);
+          extension.save(_options);
+        }
+      }
     }
   },
   getters: {
@@ -639,6 +724,9 @@ export default new Vuex.Store({
     }
   }
 });
+
+// 用于本地调试
+window.chrome = window.chrome || {};
 
 // 更新当前TabId
 if (chrome && chrome.tabs) {

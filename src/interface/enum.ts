@@ -2,8 +2,10 @@
  * 体积单位
  */
 export enum ESizeUnit {
-  TiB = "TiB",
+  ZiB = "ZiB",
+  EiB = "EiB",
   PiB = "PiB",
+  TiB = "TiB",
   GiB = "GiB",
   MiB = "MiB",
   KiB = "KiB"
@@ -142,7 +144,98 @@ export enum EAction {
   // 验证权限
   checkPermissions = "checkPermissions",
   // 请求用户授权
-  requestPermissions = "requestPermissions"
+  requestPermissions = "requestPermissions",
+  // 更改语言
+  changeLanguage = "changeLanguage",
+  // 获取当前语言资源
+  getCurrentLanguageResource = "getCurrentLanguageResource",
+  // 增加新的语言
+  addLanguage = "addLanguage",
+  // 替换现有语言
+  replaceLanguage = "replaceLanguage",
+  // 隐藏指定的消息（用于前端页面）
+  hideMessage = "hideMessage",
+  // 重置用户数据，可用于恢复用户数据
+  resetUserDatas = "resetUserDatas",
+  // 备份配置到服务器
+  backupToServer = "backupToServer",
+  // 从服务器恢复配置
+  restoreFromServer = "restoreFromServer",
+  // 从服务器获取已备份的列表
+  getBackupListFromServer = "getBackupListFromServer",
+  // 从服务器删除指定的文件
+  deleteFileFromBackupServer = "deleteFileFromBackupServer",
+  // 在后台批量下载指定的链接
+  sendTorrentsInBackground = "sendTorrentsInBackground",
+  // 创建备份文件
+  createBackupFile = "createBackupFile",
+  // 验证备份数据
+  checkBackupData = "checkBackupData",
+  // 将种子添加到收藏
+  addTorrentToCollection = "addTorrentToCollection",
+  // 获取种子收藏
+  getTorrentCollections = "getTorrentCollections",
+  // 删除种子收藏
+  deleteTorrentFromCollention = "deleteTorrentFromCollention",
+  // 清除种子收藏
+  clearTorrentCollention = "clearTorrentCollention",
+  // 获取收藏
+  getTorrentCollention = "getTorrentCollention",
+  // 获取当前站点指定的选择器配置
+  getSiteSelectorConfig = "getSiteSelectorConfig",
+  // 重置收藏，可用于恢复收藏
+  resetTorrentCollections = "resetTorrentCollections",
+  // 获取收藏分组
+  getTorrentCollectionGroups = "getTorrentCollectionGroups",
+  // 添加收藏分组
+  addTorrentCollectionGroup = "addTorrentCollectionGroup",
+  // 将当前收藏添加到分组
+  addTorrentCollectionToGroup = "addTorrentCollectionToGroup",
+  // 更新收藏分组信息
+  updateTorrentCollectionGroup = "updateTorrentCollectionGroup",
+  // 将收藏从分组中删除
+  removeTorrentCollectionFromGroup = "removeTorrentCollectionFromGroup",
+  // 删除收藏分组
+  removeTorrentCollectionGroup = "removeTorrentCollectionGroup",
+  // 更新收藏信息
+  updateTorrentCollention = "updateTorrentCollention",
+  // 获取所有收藏的链接地址
+  getAllTorrentCollectionLinks = "getAllTorrentCollectionLinks",
+  // 恢复Cookies
+  restoreCookies = "restoreCookies",
+  // 重置站点图标缓存
+  resetFavicons = "resetFavicons",
+  // 获取备份文件原始数据
+  getBackupRawData = "getBackupRawData",
+  // 测试备份服务器是否可连接
+  testBackupServerConnectivity = "testBackupServerConnectivity",
+  // 创建搜索结果快照
+  createSearchResultSnapshot = "createSearchResultSnapshot",
+  // 加载搜索结果快照
+  loadSearchResultSnapshot = "loadSearchResultSnapshot",
+  // 获取搜索结果快照内容
+  getSearchResultSnapshot = "getSearchResultSnapshot",
+  // 删除搜索结果快照
+  removeSearchResultSnapshot = "removeSearchResultSnapshot",
+  // 清除搜索结果快照
+  clearSearchResultSnapshot = "clearSearchResultSnapshot",
+  // 重置搜索结果快照
+  resetSearchResultSnapshot = "resetSearchResultSnapshot",
+
+  // 创建辅种任务
+  createKeepUploadTask = "createKeepUploadTask",
+  // 加载辅种任务
+  loadKeepUploadTask = "loadKeepUploadTask",
+  // 获取辅种任务内容
+  getKeepUploadTask = "getKeepUploadTask",
+  // 删除辅种任务
+  removeKeepUploadTask = "removeKeepUploadTask",
+  // 清除辅种任务
+  clearKeepUploadTask = "clearKeepUploadTask",
+  // 重置辅种任务
+  resetKeepUploadTask = "resetKeepUploadTask",
+  // 更新辅种任务
+  updateKeepUploadTask = "updateKeepUploadTask"
 }
 
 /**
@@ -162,7 +255,10 @@ export enum EConfigKey {
   systemLogs = "PT-Plugin-Plus-systemLogs",
   uiOptions = "PT-Plugin-Plus-uiOptions",
   cache = "PT-Plugin-Plus-Cache-Contents",
-  userDatas = "PT-Plugin-Plus-User-Datas"
+  userDatas = "PT-Plugin-Plus-User-Datas",
+  collection = "PT-Plugin-Plus-Collection",
+  searchResultSnapshot = "PT-Plugin-Plus-SearchResultSnapshot",
+  keepUploadTask = "PT-Plugin-Plus-KeepUploadTask"
 }
 
 /**
@@ -200,7 +296,9 @@ export enum EPaginationKey {
 }
 
 export enum EViewKey {
-  home = "home"
+  home = "home",
+  downloadPaths = "downloadPaths",
+  searchTorrent = "searchTorrent"
 }
 
 /**
@@ -226,7 +324,9 @@ export enum EUserDataRequestStatus {
  * 公用的一些键值
  */
 export enum ECommonKey {
-  allSite = "__allSite__"
+  allSite = "__allSite__",
+  all = "__all__",
+  noGroup = "__noGroup__"
 }
 
 /**
@@ -241,4 +341,84 @@ export enum EInstallType {
 export enum EBeforeSearchingItemSearchMode {
   id = "id",
   name = "name"
+}
+
+// 种子当前状态
+export enum ETorrentStatus {
+  // 正在下载
+  downloading = 1,
+  // 正在做种
+  sending = 2,
+  // 已完成，未做种
+  completed = 255,
+  // 未活动（曾经下载过，但未完成）
+  inactive = 3
+}
+
+/**
+ * 备份服务器类型
+ */
+export enum EBackupServerType {
+  OWSS = "OWSS",
+  WebDAV = "WebDAV"
+}
+
+/**
+ * 插件显示位置
+ */
+export enum EPluginPosition {
+  left = "left",
+  right = "right"
+}
+
+/**
+ * 相关Wiki链接
+ */
+export enum EWikiLink {
+  faq = "https://github.com/ronggang/PT-Plugin-Plus/wiki/frequently-asked-questions"
+}
+
+/**
+ * 需要恢复的内容
+ */
+export enum ERestoreContent {
+  all = "all",
+  options = "options",
+  userDatas = "userDatas",
+  collection = "collection",
+  cookies = "cookies",
+  searchResultSnapshot = "searchResultSnapshot",
+  keepUploadTask = "keepUploadTask"
+}
+
+export enum EBrowserType {
+  Chrome = "Chrome",
+  Firefox = "Firefox"
+}
+
+export enum EWorkingStatus {
+  success = "success",
+  error = "error",
+  loading = "loading"
+}
+
+export enum EResourceOrderBy {
+  time = "time",
+  name = "name",
+  size = "size"
+}
+
+export enum EResourceOrderMode {
+  desc = "desc",
+  asc = "asc"
+}
+
+// 加密方式
+export enum EEncryptMode {
+  AES = "AES"
+}
+
+export enum ERestoreError {
+  needSecretKey = "needSecretKey",
+  errorSecretKey = "errorSecretKey"
 }

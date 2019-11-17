@@ -9,12 +9,17 @@ import {
   EModule,
   ERequestResultType,
   SearchEntryConfigArea,
-  SearchEntryConfig
+  SearchEntryConfig,
+  ISearchPayload,
+  SiteCategories,
+  SiteCategory
 } from "@/interface/common";
 import { APP } from "@/service/api";
 import { SiteService } from "./site";
 import PTPlugin from "./service";
 import extend from "extend";
+import { InfoParser } from "./infoParser";
+import { PPF } from "@/service/public";
 
 export type SearchConfig = {
   site?: Site;
@@ -22,6 +27,21 @@ export type SearchConfig = {
   rootPath?: string;
   torrentTagSelectors?: any[];
 };
+
+/**
+ * 搜索结果解析状态
+ */
+export enum ESearchResultParseStatus {
+  success = "success",
+  needLogin = "needLogin",
+  noTorrents = "noTorrents",
+  torrentTableIsEmpty = "torrentTableIsEmpty",
+  parseError = "parseError"
+}
+
+Object.assign(window, {
+  ESearchResultParseStatus
+});
 
 /**
  * 搜索类
@@ -44,8 +64,13 @@ export class Searcher {
    * 搜索种子
    * @param site 需要搜索的站点
    * @param key 需要搜索的关键字
+   * @param payload 附加数据
    */
-  public searchTorrent(site: Site, key: string = ""): Promise<any> {
+  public searchTorrent(
+    site: Site,
+    key: string = "",
+    payload?: ISearchPayload
+  ): Promise<any> {
     console.log("searchTorrent: start");
     return new Promise<any>((resolve?: any, reject?: any) => {
       let result: DataResult = {
@@ -65,6 +90,7 @@ export class Searcher {
         schema && schema.searchEntryConfig ? schema.searchEntryConfig : {},
         siteServce.options.searchEntryConfig
       );
+      let searchEntryConfigQueryString = "";
 
       if (siteServce.options.searchEntry) {
         searchConfig.rootPath = `sites/${host}/`;
@@ -82,17 +108,32 @@ export class Searcher {
       }
 
       if (!searchConfig.entry) {
-        result.msg = `该站点[${site.name}]未配置搜索页面，请先配置`;
+        result.msg = this.service.i18n.t(
+          "service.searcher.siteSearchConfigEntryIsEmpty",
+          {
+            site
+          }
+        ); //`该站点[${site.name}]未配置搜索页面，请先配置`;
         result.type = EDataResultType.error;
         reject(result);
         console.log("searchTorrent: tip");
         return;
       }
 
+      // 提取 IMDb 编号，如果带整个网址，则只取编号部分
+      let imdb = key.match(/(tt\d+)/);
+      let autoMatched = false;
+      if (imdb && imdb.length >= 2) {
+        key = imdb[1];
+      }
+
+      // 将所有 . 替换为空格
+      key = key.replace(/\./g, " ");
+
       // 是否有搜索入口配置项
       if (searchEntryConfig && searchEntryConfig.page) {
-        let searchPage = searchEntryConfig.page + "?";
-        siteSearchPage = searchPage + searchEntryConfig.queryString;
+        siteSearchPage = searchEntryConfig.page;
+        searchEntryConfigQueryString = searchEntryConfig.queryString + "";
 
         // 搜索区域
         if (searchEntryConfig.area) {
@@ -102,19 +143,34 @@ export class Searcher {
               area.keyAutoMatch &&
               new RegExp(area.keyAutoMatch, "").test(key)
             ) {
+              // 是否替换默认页面
+              if (area.page) {
+                siteSearchPage = area.page;
+              }
+              autoMatched = true;
               // 如果有定义查询字符串，则替换默认的查询字符串
               if (area.queryString) {
-                siteSearchPage = searchPage + area.queryString;
+                searchEntryConfigQueryString = area.queryString;
               }
 
               // 追加查询字符串
               if (area.appendQueryString) {
-                siteSearchPage += area.appendQueryString;
+                searchEntryConfigQueryString += area.appendQueryString;
               }
 
               // 替换关键字
               if (area.replaceKey) {
-                key = key.replace(area.replaceKey[0], area.replaceKey[1]);
+                key = key.replace(
+                  new RegExp(area.replaceKey[0], "g"),
+                  area.replaceKey[1]
+                );
+              }
+
+              // 解析脚本，最终返回搜索关键字，可调用 payload 里的数据进行关键字替换
+              if (area.parseScript) {
+                try {
+                  key = eval(area.parseScript);
+                } catch (error) {}
               }
 
               return true;
@@ -130,14 +186,44 @@ export class Searcher {
       let entryCount = 0;
       let doneCount = 0;
 
+      const KEY = "$key$";
+
       searchConfig.entry.forEach((entry: SearchEntry) => {
         let searchPage = entry.entry || siteSearchPage;
+
+        // 当已自动匹配规则时，去除入口页面中已指定的关键字字段
+        if (
+          autoMatched &&
+          searchPage.indexOf(KEY) !== -1 &&
+          searchEntryConfigQueryString.indexOf(KEY) !== -1
+        ) {
+          searchPage = PPF.removeQueryStringFromValue(searchPage, KEY);
+        }
+
+        let queryString = entry.queryString;
+
+        if (searchEntryConfigQueryString) {
+          // 当前入口没有查询字符串时，尝试使用默认配置
+          if (!queryString) {
+            queryString = searchEntryConfigQueryString;
+
+            // 当前入口有查询字符串，并且不包含搜索关键字时，使用追加方式
+          } else if (queryString && queryString.indexOf(KEY) === -1) {
+            queryString = searchEntryConfigQueryString + "&" + queryString;
+          }
+        }
+
+        if (entry.appendQueryString) {
+          queryString += entry.appendQueryString;
+        }
         if (searchEntryConfig) {
           entry.parseScriptFile =
-            entry.parseScriptFile || searchEntryConfig.parseScriptFile;
-          entry.resultType = entry.resultType || searchEntryConfig.resultType;
+            searchEntryConfig.parseScriptFile || entry.parseScriptFile;
+          entry.resultType = searchEntryConfig.resultType || entry.resultType;
           entry.resultSelector =
-            entry.resultSelector || searchEntryConfig.resultSelector;
+            searchEntryConfig.resultSelector || entry.resultSelector;
+          entry.headers = searchEntryConfig.headers || entry.headers;
+          entry.asyncParse = searchEntryConfig.asyncParse || entry.asyncParse;
         }
 
         // 判断是否指定了搜索页和用于获取搜索结果的脚本
@@ -159,10 +245,18 @@ export class Searcher {
           if ((searchPage + "").substr(0, 1) == "/") {
             searchPage = (searchPage + "").substr(1);
           }
-          let url: string =
-            site.url +
-            searchPage +
-            (entry.queryString ? `&${entry.queryString}` : "");
+          let url: string = site.url + searchPage;
+
+          if (queryString) {
+            if (searchPage.indexOf("?") !== -1) {
+              url += "&" + queryString;
+            } else {
+              url += "?" + queryString;
+            }
+          }
+
+          // 支除重复的参数
+          url = PPF.removeDuplicateQueryString(url);
 
           url = this.replaceKeys(url, {
             key:
@@ -174,6 +268,11 @@ export class Searcher {
             passkey: site.passkey ? site.passkey : ""
           });
 
+          // 替换用户相关信息
+          if (site.user) {
+            url = this.replaceKeys(url, site.user, "user");
+          }
+
           entryCount++;
 
           let scriptPath = entry.parseScriptFile;
@@ -182,9 +281,7 @@ export class Searcher {
             scriptPath = `${searchConfig.rootPath}${scriptPath}`;
           }
 
-          if (!entry.parseScript) {
-            entry.parseScript = this.parseScriptCache[scriptPath];
-          }
+          entry.parseScript = this.parseScriptCache[scriptPath];
 
           if (!entry.parseScript) {
             console.log("searchTorrent: getScriptContent", scriptPath);
@@ -196,7 +293,7 @@ export class Searcher {
                 this.getSearchResult(
                   url,
                   site,
-                  entry,
+                  PPF.clone(entry),
                   searchConfig.torrentTagSelectors
                 )
                   .then((result: any) => {
@@ -234,7 +331,7 @@ export class Searcher {
             this.getSearchResult(
               url,
               site,
-              entry,
+              PPF.clone(entry),
               searchConfig.torrentTagSelectors
             )
               .then((result: any) => {
@@ -264,7 +361,12 @@ export class Searcher {
 
       // 没有指定搜索入口
       if (entryCount == 0) {
-        result.msg = `该站点[${site.name}]未指定搜索页面，请先指定一个搜索入口`;
+        result.msg = this.service.i18n.t(
+          "service.searcher.siteSearchEntryIsEmpty",
+          {
+            site
+          }
+        ); //`该站点[${site.name}]未指定搜索页面，请先指定一个搜索入口`;
         result.type = EDataResultType.error;
         reject(result);
       }
@@ -292,7 +394,8 @@ export class Searcher {
         url: url,
         dataType: "text",
         contentType: "text/plain",
-        timeout: (this.options.search && this.options.search.timeout) || 30000
+        timeout: (this.options.search && this.options.search.timeout) || 30000,
+        headers: entry.headers
       })
         .done((result: any) => {
           console.log("getSearchResult.done", url);
@@ -318,12 +421,17 @@ export class Searcher {
             } catch (error) {
               reject({
                 success: false,
-                msg: `[${site.name}]数据解析失败！`
+                msg: this.service.i18n.t(
+                  "service.searcher.siteSearchResultParseFailed",
+                  {
+                    site
+                  }
+                ) //`[${site.name}]数据解析失败！`
               });
               return;
             }
 
-            const options = {
+            let options: any = {
               results: [],
               responseText: result,
               site,
@@ -332,18 +440,41 @@ export class Searcher {
               entry,
               torrentTagSelectors: torrentTagSelectors,
               errorMsg: "",
-              isLogged: false
+              isLogged: false,
+              status: ESearchResultParseStatus.success,
+              searcher: this,
+              url
             };
 
             // 执行获取结果的脚本
             try {
               if (entry.parseScript) {
-                eval(entry.parseScript);
+                // 异步脚本，由脚本负责调用 reject 和 resolve
+                if (entry.asyncParse) {
+                  options = Object.assign(
+                    {
+                      reject,
+                      resolve
+                    },
+                    options
+                  );
+                  eval(entry.parseScript);
+                  return;
+                } else {
+                  eval(entry.parseScript);
+                }
               }
-              if (options.errorMsg) {
+              if (
+                options.errorMsg ||
+                options.status != ESearchResultParseStatus.success
+              ) {
                 reject({
                   success: false,
-                  msg: options.errorMsg,
+                  msg: this.getErrorMessage(
+                    site,
+                    options.status,
+                    options.errorMsg
+                  ),
                   data: {
                     site,
                     isLogged: options.isLogged
@@ -356,13 +487,23 @@ export class Searcher {
               console.error(error);
               reject({
                 success: false,
-                msg: `[${site.name}]脚本执行出错！`
+                msg: this.service.i18n.t(
+                  "service.searcher.siteEvalScriptFailed",
+                  {
+                    site
+                  }
+                ) //`[${site.name}]脚本执行出错！`
               });
             }
           } else {
             reject({
               success: false,
-              msg: `[${site.name}]没有返回预期的数据。`
+              msg: this.service.i18n.t(
+                "service.searcher.siteSearchResultError",
+                {
+                  site
+                }
+              ) //`[${site.name}]没有返回预期的数据。`
             });
           }
         })
@@ -372,6 +513,24 @@ export class Searcher {
           reject(result);
         });
     });
+  }
+
+  /**
+   * 根据错误代码获取错误信息
+   * @param code
+   */
+  public getErrorMessage(
+    site: Site,
+    status: ESearchResultParseStatus = ESearchResultParseStatus.success,
+    msg: string = ""
+  ): string {
+    if (status != ESearchResultParseStatus.success) {
+      return this.service.i18n.t(`contentPage.search.${status}`, {
+        siteName: site.name,
+        msg
+      });
+    }
+    return msg;
   }
 
   /**
@@ -388,7 +547,9 @@ export class Searcher {
         this.service.logger.add({
           module: EModule.background,
           event: "searcher.abortSearch",
-          msg: `正在取消[${site.host}]的搜索请求`,
+          msg: this.service.i18n.t("service.searcher.siteAbortSearch", {
+            site
+          }), //`正在取消[${site.host}]的搜索请求`,
           data: {
             site: site.host,
             key: key
@@ -422,7 +583,12 @@ export class Searcher {
                 this.service.logger.add({
                   module: EModule.background,
                   event: "searcher.abortSearch.error",
-                  msg: "取消搜索请求失败",
+                  msg: this.service.i18n.t(
+                    "service.searcher.siteAbortSearchError",
+                    {
+                      site
+                    }
+                  ), // "取消搜索请求失败",
                   data: {
                     site: site.host,
                     key: key,
@@ -460,15 +626,102 @@ export class Searcher {
     return schema;
   }
 
-  replaceKeys(source: string, keys: Dictionary<any>): string {
+  /**
+   * 替换指定的字符串列表
+   * @param source
+   * @param keys
+   */
+  replaceKeys(
+    source: string,
+    keys: Dictionary<any>,
+    prefix: string = ""
+  ): string {
     let result: string = source;
 
     for (const key in keys) {
       if (keys.hasOwnProperty(key)) {
         const value = keys[key];
-        result = result.replace("$" + key + "$", value);
+        let search = "$" + key + "$";
+        if (prefix) {
+          search = `$${prefix}.${key}$`;
+        }
+        result = result.replace(search, value);
       }
     }
     return result;
+  }
+
+  /**
+   * 从当前行中获取指定字段的值
+   * @param site 当前站点
+   * @param row 当前行
+   * @param fieldName 字段名称
+   * @return null 表示没有获取到内容
+   */
+  public getFieldValue(
+    site: Site,
+    row: JQuery<HTMLElement>,
+    fieldName: string = ""
+  ) {
+    let selector: any;
+    if (site.searchEntryConfig && site.searchEntryConfig.fieldSelector) {
+      selector = site.searchEntryConfig.fieldSelector[fieldName];
+
+      if (!selector) {
+        return null;
+      }
+    } else {
+      return null;
+    }
+
+    const parser = new InfoParser();
+    return parser.getFieldData(
+      row,
+      selector,
+      site.searchEntryConfig.fieldSelector
+    );
+  }
+
+  /**
+   * 根据指定信息获取分类
+   * @param site 站点
+   * @param page 当前搜索页面
+   * @param id 分类ID
+   */
+  public getCategoryById(site: Site, page: string, id: string) {
+    let result = {};
+    if (site.categories) {
+      site.categories.forEach((item: SiteCategories) => {
+        if (
+          item.category &&
+          (item.entry == "*" || page.indexOf(item.entry as string))
+        ) {
+          let category = item.category.find((c: SiteCategory) => {
+            return c.id == id;
+          });
+
+          if (category) {
+            result = category;
+          }
+        }
+      });
+    }
+    return result;
+  }
+
+  /**
+   * cloudflare Email 解码方法，来自 https://usamaejaz.com/cloudflare-email-decoding/
+   * @param {*} encodedString
+   */
+  public cfDecodeEmail(encodedString: string) {
+    var email = "",
+      r = parseInt(encodedString.substr(0, 2), 16),
+      n,
+      i;
+    for (n = 2; encodedString.length - n; n += 2) {
+      i = parseInt(encodedString.substr(n, 2), 16) ^ r;
+      email += String.fromCharCode(i);
+    }
+    return email;
   }
 }

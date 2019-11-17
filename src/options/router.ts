@@ -10,7 +10,11 @@ export default new Router({
       path: "/",
       name: "home",
       component: Home,
-      alias: "/home"
+      alias: "/home",
+      meta: {
+        // 需要被缓存
+        keepAlive: true
+      }
     },
     // {
     //   path: "/about",
@@ -122,6 +126,25 @@ export default new Router({
       path: "/set-permissions",
       name: "set-permissions",
       component: () => import("./components/Permissions.vue")
+    },
+    {
+      path: "/collection",
+      name: "collection",
+      component: () => import("./views/collection/Index.vue"),
+      meta: {
+        // 需要被缓存
+        keepAlive: true
+      }
+    },
+    {
+      path: "/search-result-snapshot",
+      name: "search-result-snapshot",
+      component: () => import("./views/search/SearchResultSnapshot.vue")
+    },
+    {
+      path: "/keep-upload-task",
+      name: "keep-upload-task",
+      component: () => import("./views/keepUpload/KeepUploadTasks.vue")
     }
   ]
 });

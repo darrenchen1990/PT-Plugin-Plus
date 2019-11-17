@@ -18,6 +18,10 @@
     table.v-table tbody tr:nth-child(odd) {
       background-color: #fff;
     }
+
+    table.v-table tbody tr[active='true'] {
+      background-color: #B3E5FC !important;
+    }
   }
 
   .titleCell {
@@ -25,6 +29,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding: 6px 0 !important;
+  }
+
+  .titleCell-mobile {
+    max-width: 90vw;
+    overflow: hidden;
     padding: 6px 0 !important;
   }
 
@@ -43,11 +53,20 @@
     color: #8c8c8c !important;
   }
 
+  .progress {
+    position: absolute;
+    bottom: 0;
+    right: 8px;
+    width: 80%;
+    opacity: .8;
+  }
+
   .center {
     text-align: center;
   }
 
   .size {
+    position: relative;
     text-align: right;
   }
 
@@ -131,5 +150,20 @@
         }
       }
     }
+  }
+
+  .mini {
+    min-width: unset;
+    margin: 6px 3px;
+  }
+
+  .isFixedToolbar {
+    position: fixed;
+    background-color: #fff;
+    top: 64px;
+    z-index: 3;
+    width: 100%;
+    padding: 5px;
+    box-shadow: 0px 5px 5px -1px rgba(0, 0, 0, 0.2);
   }
 }

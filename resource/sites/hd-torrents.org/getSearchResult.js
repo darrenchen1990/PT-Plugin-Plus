@@ -1,16 +1,16 @@
-(function (options) {
+(function(options, Searcher) {
   class Parser {
     constructor() {
       this.haveData = false;
-      if (/takelogin\.php/.test(options.responseText)) {
-        options.errorMsg = `[${options.site.name}]需要登录后再搜索`;
+      if (/login\.php/.test(options.responseText)) {
+        options.status = ESearchResultParseStatus.needLogin; //`[${options.site.name}]需要登录后再搜索`;
         return;
       }
 
       options.isLogged = true;
 
       if (/No torrents here/.test(options.responseText)) {
-        options.errorMsg = `[${options.site.name}]没有搜索到相关的种子`;
+        options.status = ESearchResultParseStatus.noTorrents; //`[${options.site.name}]没有搜索到相关的种子`;
         return;
       }
 
@@ -73,8 +73,11 @@
           url = `${site.url}${url}`;
         }
 
-        let dateString = cells.eq(fieldIndex.time).text().replace("  ", " ");
-        let dayStringArray = (dateString.split(" ")[1]).split("/");
+        let dateString = cells
+          .eq(fieldIndex.time)
+          .text()
+          .replace("  ", " ");
+        let dayStringArray = dateString.split(" ")[1].split("/");
         let time = dateString.split(" ")[0];
 
         let data = {
@@ -83,7 +86,9 @@
           link,
           url: url,
           size: cells.eq(fieldIndex.size).html() || 0,
-          time: `${dayStringArray[2]}-${dayStringArray[1]}-${dayStringArray[0]} ${time}`,
+          time: `${dayStringArray[2]}-${dayStringArray[1]}-${
+            dayStringArray[0]
+          } ${time}`,
           author: cells.eq(fieldIndex.author).text() || "",
           seeders: cells.eq(fieldIndex.seeders).text() || 0,
           leechers: cells.eq(fieldIndex.leechers).text() || 0,
@@ -92,13 +97,15 @@
           site: site,
           entryName: options.entry.name,
           category: this.getCategory(cells.eq(fieldIndex.category)),
-          tags: this.getTags(row, options.torrentTagSelectors)
+          tags: this.getTags(row, options.torrentTagSelectors),
+          progress: Searcher.getFieldValue(site, row, "progress"),
+          status: Searcher.getFieldValue(site, row, "status")
         };
         results.push(data);
       }
 
       if (results.length == 0) {
-        options.errorMsg = `[${options.site.name}]没有搜索到相关的种子`;
+        options.status = ESearchResultParseStatus.noTorrents; //`[${options.site.name}]没有搜索到相关的种子`;
       }
 
       return results;
@@ -127,8 +134,8 @@
 
     /**
      * 获取标签
-     * @param {*} row 
-     * @param {*} selectors 
+     * @param {*} row
+     * @param {*} selectors
      * @return array
      */
     getTags(row, selectors) {
@@ -137,7 +144,7 @@
         // 使用 some 避免错误的背景类名返回多个标签
         selectors.some(item => {
           if (item.selector) {
-            let result = row.find(item.selector)
+            let result = row.find(item.selector);
             if (result.length) {
               tags.push({
                 name: item.name,
@@ -151,7 +158,7 @@
       return tags;
     }
   }
-  let parser = new Parser(options)
-  options.results = parser.getResult()
+  let parser = new Parser(options);
+  options.results = parser.getResult();
   console.log(options.results);
-})(options)
+})(options, options.searcher);

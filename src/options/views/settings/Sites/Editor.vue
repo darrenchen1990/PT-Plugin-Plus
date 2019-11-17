@@ -1,13 +1,13 @@
 <template>
   <v-card class="mb-5" color="grey lighten-4">
     <v-card-text>
-      <v-form v-model="site.valid">
+      <v-form v-model="valid">
         <!-- 站点名称 -->
         <v-text-field
           ref="name"
           v-model="site.name"
-          :label="words.name"
-          :placeholder="words.name"
+          :label="$t('settings.sites.editor.name')"
+          :placeholder="$t('settings.sites.editor.name')"
           required
           :rules="rules.require"
         ></v-text-field>
@@ -16,27 +16,32 @@
         <v-combobox
           v-model="site.tags"
           hide-selected
-          :hint="words.inputTags"
-          :label="words.tags"
+          :hint="$t('settings.sites.editor.inputTags')"
+          :label="$t('settings.sites.editor.tags')"
           multiple
           persistent-hint
           small-chips
         ></v-combobox>
 
         <!-- 当前架构 -->
-        <v-text-field :value="getSchema" :label="words.schema" disabled v-if="!custom"></v-text-field>
+        <v-text-field
+          :value="getSchema"
+          :label="$t('settings.sites.editor.schema')"
+          disabled
+          v-if="!site.isCustom"
+        ></v-text-field>
 
         <!-- 当前架构(自定义时) -->
         <v-autocomplete
           v-model="site.schema"
           :items="$store.state.options.system.schemas"
-          :label="words.schema"
+          :label="$t('settings.sites.editor.schema')"
           :menu-props="{maxHeight:'auto'}"
           persistent-hint
           single-line
           item-text="name"
           item-value="name"
-          v-if="custom"
+          v-if="site.isCustom"
         >
           <template slot="selection" slot-scope="{ item }">
             <span v-text="item.name"></span>
@@ -53,49 +58,55 @@
 
         <v-text-field
           v-model="site.passkey"
-          :label="words.passkey"
-          :placeholder="words.passkeyTip"
+          :label="$t('settings.sites.editor.passkey')"
+          :placeholder="$t('settings.sites.editor.passkeyTip')"
           :type="showPasskey ? 'text' : 'password'"
           :append-icon="showPasskey ? 'visibility_off' : 'visibility'"
           @click:append="showPasskey = !showPasskey"
           v-if="!site.securityKeys"
         ></v-text-field>
 
-        <v-text-field
-          v-else
-          v-for="(value, key, index) in site.securityKeys"
-          :key="index"
-          :label="key"
-          :type="showPasskey ? 'text' : 'password'"
-          v-model="site.securityKeys[key]"
-          :append-icon="showPasskey ? 'visibility_off' : 'visibility'"
-          @click:append="showPasskey = !showPasskey"
-        ></v-text-field>
+        <template v-else>
+          <v-text-field
+            v-for="(value, key, index) in site.securityKeys"
+            :key="index"
+            :label="key"
+            :type="showPasskey ? 'text' : 'password'"
+            v-model="site.securityKeys[key]"
+            :append-icon="showPasskey ? 'visibility_off' : 'visibility'"
+            @click:append="showPasskey = !showPasskey"
+          ></v-text-field>
+        </template>
 
         <v-text-field
           v-model="site.url"
-          :label="words.url"
-          :placeholder="words.urlTip"
+          :label="$t('settings.sites.editor.url')"
+          :placeholder="$t('settings.sites.editor.urlTip')"
           required
-          :rules="rules.require"
+          :rules="[rules.url]"
           :disabled="!custom"
         ></v-text-field>
 
         <v-text-field
           v-model="site.priority"
-          :label="words.priority"
-          :placeholder="words.priorityTip"
+          :label="$t('settings.sites.editor.priority')"
+          :placeholder="$t('settings.sites.editor.priorityTip')"
           type="number"
         ></v-text-field>
 
-        <v-textarea v-model="cdn" :label="words.cdn" value :hint="words.cdnTip"></v-textarea>
+        <v-textarea
+          v-model="cdn"
+          :label="$t('settings.sites.editor.cdn')"
+          value
+          :hint="$t('settings.sites.editor.cdnTip')"
+        ></v-textarea>
 
-        <v-text-field v-model="site.description" :label="words.description"></v-text-field>
+        <v-text-field v-model="site.description" :label="$t('settings.sites.editor.description')"></v-text-field>
 
         <v-autocomplete
           v-model="site.defaultClientId"
           :items="this.$store.state.options.clients"
-          :label="words.defaultClient"
+          :label="$t('settings.sites.editor.defaultClient')"
           :menu-props="{maxHeight:'auto'}"
           persistent-hint
           item-text="name"
@@ -116,10 +127,13 @@
         </v-autocomplete>
 
         <!-- 允许获取用户信息 -->
-        <v-switch :label="words.allowGetUserInfo" v-model="site.allowGetUserInfo"></v-switch>
+        <v-switch
+          :label="$t('settings.sites.editor.allowGetUserInfo')"
+          v-model="site.allowGetUserInfo"
+        ></v-switch>
 
         <!-- 允许搜索 -->
-        <v-switch :label="words.allowSearch" v-model="site.allowSearch"></v-switch>
+        <v-switch :label="$t('settings.sites.editor.allowSearch')" v-model="site.allowSearch"></v-switch>
 
         <!-- 搜索入口设置 v-if="site.allowSearch"  -->
         <template v-if="site.allowSearch">
@@ -141,6 +155,9 @@
             </v-layout>
           </v-container>
         </template>
+
+        <!-- 站点已离线（停机/关闭） -->
+        <v-switch :label="$t('settings.sites.editor.offline')" v-model="site.offline"></v-switch>
       </v-form>
     </v-card-text>
   </v-card>
@@ -151,45 +168,45 @@ import { Site } from "@/interface/common";
 export default Vue.extend({
   data() {
     return {
-      words: {
-        defaultClient:
-          "指定下载服务器（如不选择则以基本设置的默认下载服务器为准）",
-        name: "站点名称",
-        tags: "站点标签",
-        inputTags: "标签输入完成后按回车添加，可添加多个",
-        schema: "网站架构",
-        description: "网站描述",
-        host: "域名",
-        url: "网站地址",
-        urlTip: "网站完整地址，如：https://open.cd/",
-        passkey: "密钥",
-        passkeyTip: "密钥仅用于复制下载地址操作，如果不需要用到此功能，请留空",
-        allowSearch: "允许搜索",
-        allowGetUserInfo: "允许获取用户信息（Beta）",
-        cdn: "站点CDN列表",
-        cdnTip:
-          "如您使用的网址和系统定义的不同，可在此填写当前使用的网站地址，每行填写一个地址，第一个将做为搜索时使用的地址",
-        priority: "优先级",
-        priorityTip: "可用于搜索排序"
-      },
       showPasskey: false,
       rules: {
-        require: [(v: any) => !!v || "!"]
+        require: [(v: any) => !!v || "!"],
+        url: (v: any) => {
+          return (
+            /^(https?):\/\/[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]$/.test(
+              v
+            ) || this.$t("settings.sites.editor.urlTip")
+          );
+        }
       },
-      cdn: ""
+      cdn: "",
+      valid: false,
+      site: {} as Site
     };
   },
   props: {
-    site: Object,
-    custom: Boolean
+    custom: Boolean,
+    initData: {
+      type: Object,
+      default: () => ({
+        valid: false
+      })
+    }
   },
   watch: {
-    site() {
-      if (this.site.cdn) {
-        this.cdn = this.site.cdn.join("\n");
-      } else {
-        this.cdn = "";
-      }
+    site: {
+      handler() {
+        if (this.site.cdn) {
+          this.cdn = this.site.cdn.join("\n");
+        } else {
+          this.cdn = "";
+        }
+        this.$emit("change", {
+          data: this.site,
+          valid: this.valid
+        });
+      },
+      deep: true
     },
     cdn() {
       let items = this.cdn.split("\n");
@@ -211,6 +228,12 @@ export default Vue.extend({
       }
 
       this.site.cdn = result;
+    },
+    initData() {
+      if (this.initData) {
+        this.site = Object.assign({}, this.initData);
+        this.valid = this.site.name && this.site.host ? true : false;
+      }
     }
   },
   computed: {

@@ -12,7 +12,17 @@
   "schema": "NexusPHP",
   "host": "hdchina.org",
   "searchEntryConfig": {
-    "resultSelector": "table.torrent_list:last > tbody > tr"
+    "resultSelector": "table.torrent_list:last > tbody > tr",
+    "fieldSelector": {
+      "progress": {
+        "selector": [".progress:eq(0) > div"],
+        "filters": ["query.attr('style')||''", "query.match(/width:([ \\d.]+)%/)", "(query && query.length>=2)?query[1]:null"]
+      },
+      "status": {
+        "selector": [".progress:eq(0) > div"],
+        "filters": ["query.attr('class')", "query=='progress_seeding'?2:(query=='progress_completed'?255:1)"]
+      }
+    }
   },
   "searchEntry": [{
       "name": "全部",
@@ -261,6 +271,7 @@
   "selectors": {
     "userExtendInfo": {
       "merge": true,
+      "topElement": "html",
       "fields": {
         "seeding": {
           "selector": ["div#ka1"],
@@ -268,7 +279,15 @@
         },
         "seedingSize": {
           "selector": ["div#ka1"],
-          "filters": ["query.parent().text().match(/共计([\\d.]+ ?[TGMK]?i?B)/)", "(query && query.length>=2)?(query[1]).sizeToNumber():0"]
+          "filters": ["query.parent().text().match(/共计([\\d.]+ ?[ZEPTGMK]?i?B)/)", "(query && query.length>=2)?(query[1]).sizeToNumber():0"]
+        },
+        "messageCount": {
+          "selector": ["div.msgalert a[href='messages.php']"],
+          "filters": ["query.text().match(/(\\d+)/)", "(query && query.length>=2)?parseInt(query[1]):0"]
+        },
+        "xCsrf": {
+          "selector": ["meta[name='x-csrf']"],
+          "attribute": "content"
         }
       }
     },
@@ -279,7 +298,8 @@
       "requestMethod": "POST",
       "requestData": {
         "userid": "$user.id$",
-        "type": "seeding"
+        "type": "seeding",
+        "csrf": "$user.xCsrf$"
       },
       "fields": {
         "seeding": {
@@ -289,6 +309,14 @@
         "seedingSize": {
           "selector": ["message"],
           "filters": ["jQuery('<div/>').html(query).find('tr:not(:eq(0))')", "jQuery.map(query.find('td.rowfollow:eq(2)'), (item)=>{return $(item).text();})", "_self.getTotalSize(query)"]
+        }
+      }
+    },
+    "/details.php": {
+      "fields": {
+        "downloadURL": {
+          "selector": ["a#clip_target"],
+          "filters": ["query.attr('href')"]
         }
       }
     }

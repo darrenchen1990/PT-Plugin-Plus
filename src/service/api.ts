@@ -1,6 +1,8 @@
 import localStorage from "./localStorage";
 import md5 from "blueimp-md5";
 import { EConfigKey, DataResult, EDataResultType } from "@/interface/common";
+import { PPF } from "./public";
+import "./favicon";
 
 let rootPath = "";
 let isExtensionMode = false;
@@ -20,13 +22,12 @@ try {
 
   isDebugMode && console.log("is extension mode.");
 } catch (error) {
+  isExtensionMode = false;
   isDebugMode && console.log("is not extension mode.");
 }
 
-// const isExtensionMode = !!(window["chrome"] && window.chrome.extension);
-const isLocalhost = window.location.hostname === "localhost";
-const RESOURCE_URL = isLocalhost
-  ? "http://localhost:8001"
+const RESOURCE_URL = !isExtensionMode
+  ? `http://${window.location.hostname}:8001`
   : (isExtensionMode ? rootPath : "") + "/resource";
 // 调试信息
 let RESOURCE_API = {
@@ -130,22 +131,29 @@ export const APP = {
     return new Promise<any>((resolve?: any, reject?: any) => {
       switch (script.type) {
         case "code":
-          eval(script.content);
+          this.runScript(script.content);
           resolve();
           break;
 
         default:
           {
-            let url = `${API.host}/${script.content || script}`;
+            let url = script.content || script;
+            if (url.substr(0, 4) !== "http") {
+              if (url.substr(0, 1) !== "/") {
+                url = `/${url}`;
+              }
+              url = `${API.host}${url}`;
+            }
+
             let content = this.cache.get(url);
             if (content) {
-              eval(content);
+              this.runScript(content);
               resolve();
             } else {
               $.get(
                 url,
                 result => {
-                  eval(result);
+                  this.runScript(result);
                   this.cache.set(url, result);
                   resolve();
                 },
@@ -159,6 +167,15 @@ export const APP = {
     });
   },
   /**
+   * 执行指定的脚本
+   * @param script 脚本内容
+   * @param scope 作用域
+   */
+  runScript(script: string, scope: any = window) {
+    // 默认将脚本作用于 window 对象，这种方式可以正常加载外部的第三方库
+    eval.call(scope, script);
+  },
+  /**
    * 追加样式信息
    * @param options
    */
@@ -167,7 +184,13 @@ export const APP = {
       let style = $("<style/>").appendTo(document.body);
       switch (options.type) {
         case "file": {
-          let url = `${API.host}/${options.content}`;
+          let url = options.content;
+          if (url.substr(0, 4) !== "http") {
+            if (url.substr(0, 1) !== "/") {
+              url = `/${url}`;
+            }
+            url = `${API.host}${url}`;
+          }
           let content = this.cache.get(url);
 
           if (content) {
@@ -210,9 +233,15 @@ export const APP = {
    */
   getScriptContent(path: string): JQueryXHR {
     let url = `${API.host}/${path}`;
+    // 外部链接
+    if (path.substr(0, 4) === "http") {
+      url = path;
+    } else {
+      url = url.replace("resource//", "resource/");
+    }
     APP.debugMode && console.log("getScriptContent", url);
     return $.ajax({
-      url: url.replace("resource//", "resource/"),
+      url,
       dataType: "text"
     });
   },
@@ -232,27 +261,11 @@ export const APP = {
    * 显示系统提示信息
    * @param options
    */
-  showNotifications(options: chrome.notifications.NotificationOptions) {
-    options = Object.assign(
-      {
-        type: "basic",
-        iconUrl: "assets/icon-128.png",
-        title: "PT 助手 Plus",
-        priority: 0,
-        message: ""
-      },
-      options
-    );
-
-    let id = Math.floor(Math.random() * 99999) + "";
-
-    chrome.notifications.create(id, options, function(myId) {
-      id = myId;
-    });
-
-    setTimeout(() => {
-      chrome.notifications.clear(id, () => {});
-    }, 3000);
+  showNotifications(
+    options: chrome.notifications.NotificationOptions,
+    timeout = 3000
+  ) {
+    PPF.showNotifications(options, timeout);
   },
   getInstallType(): Promise<any> {
     return new Promise<any>((resolve?: any, reject?: any) => {
@@ -268,5 +281,4 @@ export const APP = {
 };
 
 APP.cache.init();
-
 export const API = RESOURCE_API;

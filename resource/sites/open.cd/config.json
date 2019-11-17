@@ -6,19 +6,26 @@
   "tags": ["音乐"],
   "schema": "NexusPHP",
   "host": "open.cd",
+  "searchEntryConfig": {
+    "skipIMDbId": true,
+    "fieldSelector": {
+      "progress": {
+        "selector": [".progress:eq(0) > div"],
+        "filters": ["query.attr('style')||''", "query.match(/width:([ \\d.]+)%/)", "(query && query.length>=2)?query[1]:null"]
+      },
+      "status": {
+        "selector": [".progress:eq(0) > div"],
+        "filters": ["query.attr('class')", "query=='progress_seeding'?2:(query=='progress_completed'?255:1)"]
+      }
+    }
+  },
   "searchEntry": [{
-    "entry": "/torrents.php?search=$key$&boardid=2&notnewword=1",
+    "appendQueryString": "&boardid=2",
     "name": "原抓区",
-    "resultType": "html",
-    "parseScriptFile": "/schemas/NexusPHP/getSearchResult.js",
-    "resultSelector": "table.torrents:last > tbody > tr",
     "enabled": true
   }, {
-    "entry": "/torrents.php?search=$key$&boardid=1&notnewword=1",
+    "appendQueryString": "&boardid=1",
     "name": "普通区",
-    "resultType": "html",
-    "parseScriptFile": "/schemas/NexusPHP/getSearchResult.js",
-    "resultSelector": "table.torrents:last > tbody > tr",
     "enabled": true
   }],
   "categories": [{
@@ -75,9 +82,12 @@
         },
         "seedingSize": {
           "selector": ["div#ka1"],
-          "filters": ["query.parent().text().match(/共计([\\d.]+ ?[TGMK]?i?B)/)", "(query && query.length>=2)?(query[1]).sizeToNumber():0"]
+          "filters": ["query.parent().text().match(/共计([\\d.]+ ?[ZEPTGMK]?i?B)/)", "(query && query.length>=2)?(query[1]).sizeToNumber():0"]
         }
       }
     }
+  },
+  "supportedFeatures": {
+    "imdbSearch": false
   }
 }

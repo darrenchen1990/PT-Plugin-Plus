@@ -2,7 +2,20 @@ interface IFilter {
   formatNumber: (source: number, format?: string) => string;
   formatSize: (bytes: any, zeroToEmpty?: boolean, type?: string) => string;
   formatSpeed: (bytes: any, zeroToEmpty: boolean) => string;
-  parseURL: (url: string) => any;
+  parseURL: (
+    url: string
+  ) => {
+    source: string;
+    protocol: string;
+    host: string;
+    port?: number;
+    query?: string;
+    params?: string[];
+    hash?: string;
+    path: string;
+    segments: string;
+    origin: string;
+  };
   timeAgoToNumber: (source: string) => number;
   [key: string]: any;
 }
@@ -17,6 +30,10 @@ export const filters: IFilter = {
    * @param format 格式化格式
    */
   formatNumber(source: number, format: string = "###,###,###,###.00"): string {
+    if (source === undefined) {
+      return "";
+    }
+
     const fStr = (sNumber: string, fmt?: any, p?: any) => {
       if (sNumber === "" || sNumber === undefined) {
         if (fmt === "" || fmt === undefined) {
@@ -98,6 +115,11 @@ export const filters: IFilter = {
       return "";
     }
 
+    let bytes = parseFloat(sourceString);
+    if (isNaN(bytes)) {
+      return sourceString;
+    }
+
     if (!format) {
       return sourceString;
     }
@@ -144,21 +166,27 @@ export const filters: IFilter = {
     }
     let r: number;
     let u = "KiB";
-    if (bytes < 1000 * 1024) {
-      r = bytes / 1024;
+    if (bytes < 1000 * Math.pow(2, 10)) {
+      r = bytes / Math.pow(2, 10);
       u = "KiB";
-    } else if (bytes < 1000 * 1048576) {
-      r = bytes / 1048576;
+    } else if (bytes < 1000 * Math.pow(2, 20)) {
+      r = bytes / Math.pow(2, 20);
       u = "MiB";
-    } else if (bytes < 1000 * 1073741824) {
-      r = bytes / 1073741824;
+    } else if (bytes < 1000 * Math.pow(2, 30)) {
+      r = bytes / Math.pow(2, 30);
       u = "GiB";
-    } else if (bytes < 1000 * 1099511627776) {
-      r = bytes / 1099511627776;
+    } else if (bytes < 1000 * Math.pow(2, 40)) {
+      r = bytes / Math.pow(2, 40);
       u = "TiB";
-    } else {
-      r = bytes / 1125899906842624;
+    } else if (bytes < 1000 * Math.pow(2, 50)) {
+      r = bytes / Math.pow(2, 50);
       u = "PiB";
+    } else if (bytes < 1000 * Math.pow(2, 60)) {
+      r = bytes / Math.pow(2, 60);
+      u = "EiB";
+    } else {
+      r = bytes / Math.pow(2, 70);
+      u = "ZiB";
     }
 
     if (type === "speed") {
@@ -227,7 +255,8 @@ export const filters: IFilter = {
       })(),
       hash: a.hash.replace("#", ""),
       path: a.pathname.replace(/^([^/])/, "/$1"),
-      segments: a.pathname.replace(/^\//, "").split("/")
+      segments: a.pathname.replace(/^\//, "").split("/"),
+      origin: `${a.protocol}//${a.hostname}` + (a.port ? `:${a.port}` : "")
     };
   },
 
@@ -236,8 +265,15 @@ export const filters: IFilter = {
    * @param source
    */
   timeAgoToNumber(source: string): number {
-    // 有部分站点连 ago 都没有
-    let rule = /^([\d.]+).+?((year|month|week|day|hour|min|minute)s?)( +ago)?$/i;
+    /**
+     * 可以匹配以下情况：
+     * 1 year
+     * 1 year ago
+     * 2 yesrs ago
+     * 2.1 months ago
+     * 2.1 months ago by xxx
+     */
+    let rule = /^([\d.]+).+?((year|month|week|day|hour|min|minute)s?)( +ago)?(.+)?$/i;
 
     let matchs = source.trim().match(rule);
     if (!matchs) {
